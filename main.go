@@ -13,7 +13,10 @@ func main() {
 	versionFlag := flag.Bool("version", false, "print the app version")
 
 	// Parse flags
-	flag.CommandLine.Usage = func()
+	flag.CommandLine.Usage = func() {
+		fmt.Println("Usage: nocti [options]")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 
 	// Logic for the version flag
