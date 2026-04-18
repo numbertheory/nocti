@@ -21,7 +21,7 @@ func main() {
 
 	// Logic for the version flag
 	if *versionFlag {
-		fmt.Println(Version)
+		fmt.Println("Nocti Note Taking:", Version)
 		return
 	}
 
