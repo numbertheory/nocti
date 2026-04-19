@@ -38,7 +38,7 @@ type FullConfig struct {
 	Calendars []Calendar `json:"calendars,omitempty"`
 }
 
-func generateID() string {
+func GenerateID() string {
 	b := make([]byte, 3)
 	if _, err := rand.Read(b); err != nil {
 		return "000000"
@@ -46,7 +46,7 @@ func generateID() string {
 	return hex.EncodeToString(b)
 }
 
-var newCmd = &cobra.Command{
+var NewCmd = &cobra.Command{
 	Use:   "new",
 	Short: "Create a new resource",
 	Long: `Create a new resource like a notebook, todo list, or calendar.
@@ -82,13 +82,13 @@ Resources are stored in the .nocti/nocti.json file in your project directory.`,
 	},
 }
 
-var resourceName string
+var ResourceName string
 
-func createResource(resourceType string) error {
+func CreateResource(resourceType string) error {
 	filename := ".nocti/nocti.json"
 
 	// Use flag if provided, otherwise prompt
-	name := resourceName
+	name := ResourceName
 	if name == "" {
 		prompt := &survey.Input{
 			Message: fmt.Sprintf("Enter %s name:", resourceType),
@@ -124,9 +124,9 @@ func createResource(resourceType string) error {
 	}
 
 	// Generate a unique ID
-	newID := generateID()
+	newID := GenerateID()
 	for existingIDs[newID] {
-		newID = generateID()
+		newID = GenerateID()
 	}
 
 	res := Resource{
@@ -163,7 +163,7 @@ var newNotebookCmd = &cobra.Command{
 	Use:   "notebook",
 	Short: "Create a new notebook",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return createResource("notebook")
+		return CreateResource("notebook")
 	},
 }
 
@@ -171,7 +171,7 @@ var newTodoCmd = &cobra.Command{
 	Use:   "todo",
 	Short: "Create a new todo list",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return createResource("todo")
+		return CreateResource("todo")
 	},
 }
 
@@ -179,14 +179,14 @@ var newCalendarCmd = &cobra.Command{
 	Use:   "calendar",
 	Short: "Create a new calendar",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return createResource("calendar")
+		return CreateResource("calendar")
 	},
 }
 
 func init() {
-	newCmd.PersistentFlags().StringVarP(&resourceName, "name", "n", "", "Name of the resource to create")
-	newCmd.AddCommand(newNotebookCmd)
-	newCmd.AddCommand(newTodoCmd)
-	newCmd.AddCommand(newCalendarCmd)
-	rootCmd.AddCommand(newCmd)
+	NewCmd.PersistentFlags().StringVarP(&ResourceName, "name", "n", "", "Name of the resource to create")
+	NewCmd.AddCommand(newNotebookCmd)
+	NewCmd.AddCommand(newTodoCmd)
+	NewCmd.AddCommand(newCalendarCmd)
+	RootCmd.AddCommand(NewCmd)
 }

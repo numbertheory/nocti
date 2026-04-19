@@ -13,9 +13,9 @@ type Config struct {
 	Version string `json:"version"`
 }
 
-var projectName string
+var ProjectName string
 
-var initCmd = &cobra.Command{
+var InitCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize a new nocti project",
 	Long:  `Creates a .nocti/nocti.json file in the current working directory with default configuration.`,
@@ -25,14 +25,14 @@ var initCmd = &cobra.Command{
 		defaultProjectName := "my-nocti-project"
 
 		// If flag is not set, prompt for project name
-		if projectName == "" {
+		if ProjectName == "" {
 			fmt.Printf("Enter project name (%s): ", defaultProjectName)
-			_, err := fmt.Scanln(&projectName)
+			_, err := fmt.Scanln(&ProjectName)
 			if err != nil && err.Error() != "unexpected newline" {
 				return fmt.Errorf("failed to read project name: %w", err)
 			}
-			if projectName == "" {
-				projectName = defaultProjectName
+			if ProjectName == "" {
+				ProjectName = defaultProjectName
 			}
 		}
 
@@ -47,7 +47,7 @@ var initCmd = &cobra.Command{
 		}
 
 		config := Config{
-			Name:    projectName,
+			Name:    ProjectName,
 			Version: Version,
 		}
 
@@ -67,6 +67,6 @@ var initCmd = &cobra.Command{
 }
 
 func init() {
-	initCmd.Flags().StringVarP(&projectName, "project", "p", "", "Name of the nocti project")
-	rootCmd.AddCommand(initCmd)
+	InitCmd.Flags().StringVarP(&ProjectName, "project", "p", "", "Name of the nocti project")
+	RootCmd.AddCommand(InitCmd)
 }

@@ -9,7 +9,7 @@ import (
 
 var Version = "development"
 
-var rootCmd = &cobra.Command{
+var RootCmd = &cobra.Command{
 	Use:   "nocti",
 	Short: "Nocti Note Taking CLI",
 	Long:  `Nocti is a CLI tool for note-taking and knowledge management.`,
@@ -24,12 +24,12 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
+	if err := RootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
 func init() {
-	rootCmd.Flags().BoolP("version", "v", false, "Print the version number of nocti")
+	RootCmd.Flags().BoolP("version", "v", false, "Print the version number of nocti")
 }

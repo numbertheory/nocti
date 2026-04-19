@@ -6,7 +6,7 @@ TARGET_BINARY=$(BUILD_DIR)/$(BINARY_NAME)
 VERSION=$(shell git describe --tags --always 2>/dev/null || echo "development")
 LD_FLAGS="-X nocti/cmd.Version=$(VERSION)"
 
-.PHONY: all build install clean help
+.PHONY: all build install clean test help
 
 all: build
 
@@ -14,6 +14,10 @@ build:
 	@echo "Building $(BINARY_NAME) $(VERSION) into $(BUILD_DIR)..."
 	@mkdir -p $(BUILD_DIR)
 	go build -ldflags $(LD_FLAGS) -o $(TARGET_BINARY) main.go
+
+test:
+	@echo "Running tests..."
+	go test -v ./...
 
 install: build
 	@echo "Installing $(BINARY_NAME) to $(INSTALL_DIR)..."
@@ -38,6 +42,7 @@ clean:
 help:
 	@echo "Usage:"
 	@echo "  make build    - Build the binary in $(BUILD_DIR)/"
+	@echo "  make test     - Run unit tests"
 	@echo "  make install  - Build and move the binary to $(INSTALL_DIR)"
 	@echo "  make clean    - Remove build artifacts"
 	@echo "  make help     - Show this help message"
