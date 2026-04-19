@@ -3,14 +3,17 @@ BUILD_DIR=build
 INSTALL_DIR=$(HOME)/.local/bin
 TARGET_BINARY=$(BUILD_DIR)/$(BINARY_NAME)
 
+VERSION=$(shell git describe --tags --always 2>/dev/null || echo "development")
+LD_FLAGS="-X nocti/cmd.Version=$(VERSION)"
+
 .PHONY: all build install clean help
 
 all: build
 
 build:
-	@echo "Building $(BINARY_NAME) into $(BUILD_DIR)..."
+	@echo "Building $(BINARY_NAME) $(VERSION) into $(BUILD_DIR)..."
 	@mkdir -p $(BUILD_DIR)
-	go build -o $(TARGET_BINARY) main.go
+	go build -ldflags $(LD_FLAGS) -o $(TARGET_BINARY) main.go
 
 install: build
 	@echo "Installing $(BINARY_NAME) to $(INSTALL_DIR)..."
