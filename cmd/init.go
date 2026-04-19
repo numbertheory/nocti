@@ -27,7 +27,7 @@ var initCmd = &cobra.Command{
 
 		config := Config{
 			Name:    "my-nocti-project",
-			Version: "1.0.0",
+			Version: Version,
 		}
 
 		data, err := json.MarshalIndent(config, "", "  ")
