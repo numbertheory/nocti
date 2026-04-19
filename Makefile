@@ -1,18 +1,21 @@
 BINARY_NAME=nocti
+BUILD_DIR=build
 INSTALL_DIR=$(HOME)/.local/bin
+TARGET_BINARY=$(BUILD_DIR)/$(BINARY_NAME)
 
 .PHONY: all build install clean help
 
 all: build
 
 build:
-	@echo "Building $(BINARY_NAME)..."
-	go build -o build/$(BINARY_NAME) main.go
+	@echo "Building $(BINARY_NAME) into $(BUILD_DIR)..."
+	@mkdir -p $(BUILD_DIR)
+	go build -o $(TARGET_BINARY) main.go
 
 install: build
 	@echo "Installing $(BINARY_NAME) to $(INSTALL_DIR)..."
 	@mkdir -p $(INSTALL_DIR)
-	@mv build/$(BINARY_NAME) $(INSTALL_DIR)/$(BINARY_NAME)
+	@mv $(TARGET_BINARY) $(INSTALL_DIR)/$(BINARY_NAME)
 	@echo "Installation complete!"
 	@case ":$(PATH):" in \
 		*":$(INSTALL_DIR):"*) ;; \
@@ -24,15 +27,14 @@ install: build
 			;; \
 	esac
 
-
 clean:
 	@echo "Cleaning up..."
-	@rm -f $(BINARY_NAME)
+	@rm -rf $(BUILD_DIR)
 	@rm -f nocti.json
 
 help:
 	@echo "Usage:"
-	@echo "  make build    - Build the binary"
-	@echo "  make install  - Build and install the binary to $(INSTALL_DIR)"
+	@echo "  make build    - Build the binary in $(BUILD_DIR)/"
+	@echo "  make install  - Build and move the binary to $(INSTALL_DIR)"
 	@echo "  make clean    - Remove build artifacts"
 	@echo "  make help     - Show this help message"
