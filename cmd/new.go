@@ -13,11 +13,29 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Notebook defines the structure of a notebook entry
-type Notebook struct {
+// Resource defines the common fields for all nocti resources
+type Resource struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	CreatedAt string `json:"created_at"`
+}
+
+// Notebook defines the structure of a notebook entry
+type Notebook Resource
+
+// Todo defines the structure of a todo list entry
+type Todo Resource
+
+// Calendar defines the structure of a calendar entry
+type Calendar Resource
+
+// FullConfig to include all resource types
+type FullConfig struct {
+	Name      string     `json:"name"`
+	Version   string     `json:"version"`
+	Notebooks []Notebook `json:"notebooks,omitempty"`
+	Todos     []Todo     `json:"todos,omitempty"`
+	Calendars []Calendar `json:"calendars,omitempty"`
 }
 
 func generateID() string {
@@ -28,17 +46,11 @@ func generateID() string {
 	return hex.EncodeToString(b)
 }
 
-// Updated Config to include notebooks
-type FullConfig struct {
-	Name      string     `json:"name"`
-	Version   string     `json:"version"`
-	Notebooks []Notebook `json:"notebooks,omitempty"`
-}
-
 var newCmd = &cobra.Command{
 	Use:   "new",
 	Short: "Create a new resource",
-	Long:  `Create a new resource like a notebook, todo, or calendar.`,
+	Long: `Create a new resource like a notebook, todo list, or calendar.
+Resources are stored in the .nocti/nocti.json file in your project directory.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		if _, err := os.Stat(".nocti/nocti.json"); os.IsNotExist(err) {
 			return fmt.Errorf("you need to init with `nocti init` before creating new resources")
@@ -46,8 +58,6 @@ var newCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// If a subcommand was provided, Cobra handles it.
-		// If not, we show the interactive menu.
 		var choice string
 		prompt := &survey.Select{
 			Message: "What would you like to create?",
@@ -63,79 +73,115 @@ var newCmd = &cobra.Command{
 		case "notebook":
 			return newNotebookCmd.RunE(newNotebookCmd, args)
 		case "todo":
-			fmt.Println("Todo creation not yet implemented")
+			return newTodoCmd.RunE(newTodoCmd, args)
 		case "calendar":
-			fmt.Println("Calendar creation not yet implemented")
+			return newCalendarCmd.RunE(newCalendarCmd, args)
 		}
 
 		return nil
 	},
+}
+
+func createResource(resourceType string) error {
+	filename := ".nocti/nocti.json"
+
+	// Prompt for name
+	var name string
+	prompt := &survey.Input{
+		Message: fmt.Sprintf("Enter %s name:", resourceType),
+	}
+	err := survey.AskOne(prompt, &name, survey.WithValidator(survey.Required))
+	if err != nil {
+		return err
+	}
+	name = strings.TrimSpace(name)
+
+	// Read existing config
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	var config FullConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	// Create a map of all existing IDs to ensure uniqueness across all types
+	existingIDs := make(map[string]bool)
+	for _, nb := range config.Notebooks {
+		existingIDs[nb.ID] = true
+	}
+	for _, t := range config.Todos {
+		existingIDs[t.ID] = true
+	}
+	for _, c := range config.Calendars {
+		existingIDs[c.ID] = true
+	}
+
+	// Generate a unique ID
+	newID := generateID()
+	for existingIDs[newID] {
+		newID = generateID()
+	}
+
+	res := Resource{
+		ID:        newID,
+		Name:      name,
+		CreatedAt: time.Now().Format(time.RFC3339),
+	}
+
+	// Add to correct slice
+	switch resourceType {
+	case "notebook":
+		config.Notebooks = append(config.Notebooks, Notebook(res))
+	case "todo":
+		config.Todos = append(config.Todos, Todo(res))
+	case "calendar":
+		config.Calendars = append(config.Calendars, Calendar(res))
+	}
+
+	// Save updated config
+	updatedData, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal updated config: %w", err)
+	}
+
+	if err := os.WriteFile(filename, updatedData, 0644); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	fmt.Printf("Successfully created %s: %s (ID: %s)\n", resourceType, name, newID)
+	return nil
 }
 
 var newNotebookCmd = &cobra.Command{
 	Use:   "notebook",
 	Short: "Create a new notebook",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		filename := ".nocti/nocti.json"
+		return createResource("notebook")
+	},
+}
 
-		// Prompt for notebook name
-		var notebookName string
-		namePrompt := &survey.Input{
-			Message: "Enter notebook name:",
-		}
-		err := survey.AskOne(namePrompt, &notebookName, survey.WithValidator(survey.Required))
-		if err != nil {
-			return err
-		}
-		notebookName = strings.TrimSpace(notebookName)
+var newTodoCmd = &cobra.Command{
+	Use:   "todo",
+	Short: "Create a new todo list",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return createResource("todo")
+	},
+}
 
-		// Read existing config
-		data, err := os.ReadFile(filename)
-		if err != nil {
-			return fmt.Errorf("failed to read config: %w", err)
-		}
-
-		var config FullConfig
-		if err := json.Unmarshal(data, &config); err != nil {
-			return fmt.Errorf("failed to parse config: %w", err)
-		}
-
-		// Create a map of existing IDs for quick lookup
-		existingIDs := make(map[string]bool)
-		for _, nb := range config.Notebooks {
-			existingIDs[nb.ID] = true
-		}
-
-		// Generate a unique ID
-		newID := generateID()
-		for existingIDs[newID] {
-			newID = generateID()
-		}
-
-		// Add new notebook
-		newNB := Notebook{
-			ID:        newID,
-			Name:      notebookName,
-			CreatedAt: time.Now().Format(time.RFC3339),
-		}
-		config.Notebooks = append(config.Notebooks, newNB)
-
-		// Save updated config
-		updatedData, err := json.MarshalIndent(config, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal updated config: %w", err)
-		}
-
-		if err := os.WriteFile(filename, updatedData, 0644); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
-		}
-
-		fmt.Printf("Successfully created notebook: %s\n", notebookName)
-		return nil
+var newCalendarCmd = &cobra.Command{
+	Use:   "calendar",
+	Short: "Create a new calendar",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return createResource("calendar")
 	},
 }
 
 func init() {
 	newCmd.AddCommand(newNotebookCmd)
+	newCmd.AddCommand(newTodoCmd)
+	newCmd.AddCommand(newCalendarCmd)
 	rootCmd.AddCommand(newCmd)
 }
