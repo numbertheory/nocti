@@ -82,17 +82,21 @@ Resources are stored in the .nocti/nocti.json file in your project directory.`,
 	},
 }
 
+var resourceName string
+
 func createResource(resourceType string) error {
 	filename := ".nocti/nocti.json"
 
-	// Prompt for name
-	var name string
-	prompt := &survey.Input{
-		Message: fmt.Sprintf("Enter %s name:", resourceType),
-	}
-	err := survey.AskOne(prompt, &name, survey.WithValidator(survey.Required))
-	if err != nil {
-		return err
+	// Use flag if provided, otherwise prompt
+	name := resourceName
+	if name == "" {
+		prompt := &survey.Input{
+			Message: fmt.Sprintf("Enter %s name:", resourceType),
+		}
+		err := survey.AskOne(prompt, &name, survey.WithValidator(survey.Required))
+		if err != nil {
+			return err
+		}
 	}
 	name = strings.TrimSpace(name)
 
@@ -180,6 +184,7 @@ var newCalendarCmd = &cobra.Command{
 }
 
 func init() {
+	newCmd.PersistentFlags().StringVarP(&resourceName, "name", "n", "", "Name of the resource to create")
 	newCmd.AddCommand(newNotebookCmd)
 	newCmd.AddCommand(newTodoCmd)
 	newCmd.AddCommand(newCalendarCmd)
