@@ -79,6 +79,14 @@ func TestCreateResource(t *testing.T) {
 
 	t.Run("Create a notebook when directory already exists", func(t *testing.T) {
 		dirName := "existing-notebook"
+		// Register it first to satisfy the new uniqueness logic
+		configData, _ := os.ReadFile(".nocti/nocti.json")
+		var config cmd.FullConfig
+		json.Unmarshal(configData, &config)
+		config.Notebooks = append(config.Notebooks, cmd.Notebook{ID: "exist1", Name: dirName, CreatedAt: "2026-04-21T00:00:00Z"})
+		updatedConfig, _ := json.Marshal(config)
+		os.WriteFile(".nocti/nocti.json", updatedConfig, 0644)
+
 		if err := os.Mkdir(dirName, 0755); err != nil {
 			t.Fatalf("Failed to create pre-existing directory: %v", err)
 		}
@@ -104,6 +112,14 @@ func TestCreateResource(t *testing.T) {
 
 	t.Run("Fail when .nocti.json already exists and no overwrite flag", func(t *testing.T) {
 		dirName := "no-overwrite"
+		// Register it first
+		configData, _ := os.ReadFile(".nocti/nocti.json")
+		var config cmd.FullConfig
+		json.Unmarshal(configData, &config)
+		config.Notebooks = append(config.Notebooks, cmd.Notebook{ID: "noovr1", Name: dirName, CreatedAt: "2026-04-21T00:00:00Z"})
+		updatedConfig, _ := json.Marshal(config)
+		os.WriteFile(".nocti/nocti.json", updatedConfig, 0644)
+
 		os.Mkdir(dirName, 0755)
 		os.WriteFile(dirName+"/.nocti.json", []byte("{}"), 0644)
 
@@ -117,6 +133,14 @@ func TestCreateResource(t *testing.T) {
 
 	t.Run("Succeed when .nocti.json already exists and overwrite flag is set", func(t *testing.T) {
 		dirName := "yes-overwrite"
+		// Register it first
+		configData, _ := os.ReadFile(".nocti/nocti.json")
+		var config cmd.FullConfig
+		json.Unmarshal(configData, &config)
+		config.Notebooks = append(config.Notebooks, cmd.Notebook{ID: "yesovr1", Name: dirName, CreatedAt: "2026-04-21T00:00:00Z"})
+		updatedConfig, _ := json.Marshal(config)
+		os.WriteFile(".nocti/nocti.json", updatedConfig, 0644)
+
 		os.Mkdir(dirName, 0755)
 		os.WriteFile(dirName+"/.nocti.json", []byte("old content"), 0644)
 
@@ -151,6 +175,71 @@ func TestCreateResource(t *testing.T) {
 		if config.Todos[0].Name != "test-todo" {
 			t.Errorf("Expected todo name 'test-todo', got '%s'", config.Todos[0].Name)
 		}
+
+		// Verify directory and .nocti.json
+		if _, err := os.Stat("test-todo/.nocti.json"); os.IsNotExist(err) {
+			t.Error("Expected 'test-todo/.nocti.json' to be created")
+		}
+	})
+
+	t.Run("Create a new calendar", func(t *testing.T) {
+		cmd.ResourceName = "test-calendar"
+		err := cmd.CreateResource("calendar")
+		if err != nil {
+			t.Errorf("CreateResource('calendar') failed: %v", err)
+		}
+
+		// Verify file content
+		updatedData, _ := os.ReadFile(".nocti/nocti.json")
+		var config cmd.FullConfig
+		json.Unmarshal(updatedData, &config)
+
+		if len(config.Calendars) != 1 {
+			t.Errorf("Expected 1 calendar, got %d", len(config.Calendars))
+		}
+		if config.Calendars[0].Name != "test-calendar" {
+			t.Errorf("Expected calendar name 'test-calendar', got '%s'", config.Calendars[0].Name)
+		}
+
+		// Verify directory and .nocti.json
+		if _, err := os.Stat("test-calendar/.nocti.json"); os.IsNotExist(err) {
+			t.Error("Expected 'test-calendar/.nocti.json' to be created")
+		}
+	})
+
+	t.Run("Re-creating a notebook with same name should not duplicate config entry", func(t *testing.T) {
+		cmd.ResourceName = "test-notebook" // already created in first test
+		cmd.Overwrite = true
+		err := cmd.CreateResource("notebook")
+		if err != nil {
+			t.Errorf("Expected success when re-creating notebook: %v", err)
+		}
+
+		updatedData, _ := os.ReadFile(".nocti/nocti.json")
+		var config cmd.FullConfig
+		json.Unmarshal(updatedData, &config)
+
+		count := 0
+		for _, nb := range config.Notebooks {
+			if nb.Name == "test-notebook" {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("Expected only 1 notebook entry for 'test-notebook', got %d", count)
+		}
+	})
+
+	t.Run("Fail when folder exists but not in config", func(t *testing.T) {
+		dirName := "unregistered-folder"
+		os.Mkdir(dirName, 0755)
+
+		cmd.ResourceName = dirName
+		cmd.Overwrite = false
+		err := cmd.CreateResource("notebook")
+		if err == nil {
+			t.Error("Expected error when folder exists but is not in config")
+		}
 	})
 
 	t.Run("Create multiple resources and check unique IDs", func(t *testing.T) {
@@ -163,9 +252,25 @@ func TestCreateResource(t *testing.T) {
 		var config cmd.FullConfig
 		json.Unmarshal(updatedData, &config)
 
-		// Total notebooks should be 5 (1 from first test + 1 from second + 1 from successful overwrite test + 2 from this one)
-		if len(config.Notebooks) != 5 {
-			t.Errorf("Expected 5 notebooks total, got %d", len(config.Notebooks))
+		// Total notebooks should be 8:
+		// 1 (test-notebook)
+		// 1 (existing-notebook - pre-registered)
+		// 1 (no-overwrite - pre-registered)
+		// 1 (yes-overwrite - pre-registered)
+		// 1 (unregistered-folder - fails, so not added)
+		// 1 (re-creation of test-notebook - not added)
+		// 2 (nb-1, nb-2)
+		// Wait, let's recount:
+		// 1. "Create a new notebook" -> test-notebook (1)
+		// 2. "Create a notebook when directory already exists" -> manually added "existing-notebook" (2)
+		// 3. "Fail when .nocti.json already exists" -> manually added "no-overwrite" (3)
+		// 4. "Succeed when .nocti.json already exists" -> manually added "yes-overwrite" (4)
+		// 5. "Re-creating a notebook" -> test-notebook (already exists, count stays 4)
+		// 6. "Fail when folder exists but not in config" -> unregistered-folder (fails, count stays 4)
+		// 7. "Create multiple resources" -> nb-1, nb-2 (6 total)
+
+		if len(config.Notebooks) != 6 {
+			t.Errorf("Expected 6 notebooks total, got %d", len(config.Notebooks))
 		}
 
 		ids := make(map[string]bool)

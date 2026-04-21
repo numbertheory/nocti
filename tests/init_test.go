@@ -54,4 +54,21 @@ func TestInitCmd(t *testing.T) {
 			t.Error("Expected error when initializing an already existing project, got nil")
 		}
 	})
+
+	t.Run("Initialize project inside a resource folder", func(t *testing.T) {
+		resourceDir, _ := os.MkdirTemp(tmpDir, "resource-dir-*")
+		os.Chdir(resourceDir)
+		defer os.Chdir(tmpDir)
+
+		os.WriteFile(".nocti.json", []byte("{}"), 0644)
+
+		cmd.ProjectName = "fail-project"
+		err := cmd.InitCmd.RunE(cmd.InitCmd, []string{})
+		if err == nil {
+			t.Error("Expected error when initializing inside a resource folder, got nil")
+		}
+		if err != nil && err.Error() != "cannot run 'nocti init' inside a nocti resource directory" {
+			t.Errorf("Expected specific error message, got: %v", err)
+		}
+	})
 }

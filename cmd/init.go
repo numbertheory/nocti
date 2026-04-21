@@ -20,6 +20,11 @@ var InitCmd = &cobra.Command{
 	Short: "Initialize a new nocti project",
 	Long:  `Creates a .nocti/nocti.json file in the current working directory with default configuration.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Block init if inside a nocti resource
+		if _, err := os.Stat(".nocti.json"); err == nil {
+			return fmt.Errorf("cannot run 'nocti init' inside a nocti resource directory")
+		}
+
 		dir := ".nocti"
 		filename := dir + "/nocti.json"
 		defaultProjectName := "my-nocti-project"

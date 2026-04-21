@@ -112,77 +112,114 @@ func CreateResource(resourceType string) error {
 		return fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	// Create a map of all existing IDs to ensure uniqueness across all types
-	existingIDs := make(map[string]bool)
-	for _, nb := range config.Notebooks {
-		existingIDs[nb.ID] = true
-	}
-	for _, t := range config.Todos {
-		existingIDs[t.ID] = true
-	}
-	for _, c := range config.Calendars {
-		existingIDs[c.ID] = true
-	}
+	var res Resource
+	var skipConfigUpdate bool
 
-	// Generate a unique ID
-	newID := GenerateID()
-	for existingIDs[newID] {
-		newID = GenerateID()
-	}
-
-	res := Resource{
-		ID:        newID,
-		Name:      name,
-		CreatedAt: time.Now().Format(time.RFC3339),
-	}
-
-	// Add to correct slice
+	// Check if a resource with this name already exists
+	var existingResources []Resource
 	switch resourceType {
 	case "notebook":
-		config.Notebooks = append(config.Notebooks, Notebook(res))
-		// Create directory if it doesn't exist
-		if _, err := os.Stat(name); os.IsNotExist(err) {
-			if err := os.Mkdir(name, 0755); err != nil {
-				return fmt.Errorf("failed to create directory %s: %w", name, err)
-			}
-		}
-
-		// Create or update .nocti.json inside the notebook folder
-		notebookConfigPath := fmt.Sprintf("%s/.nocti.json", name)
-		if _, err := os.Stat(notebookConfigPath); err == nil && !Overwrite {
-			return fmt.Errorf("file %s already exists and will not be overwritten (use -o to overwrite)", notebookConfigPath)
-		}
-
-		nbMetadata := map[string]string{
-			"id":         res.ID,
-			"type":       "notebook",
-			"created_at": res.CreatedAt,
-		}
-		nbData, err := json.MarshalIndent(nbMetadata, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal notebook metadata: %w", err)
-		}
-
-		if err := os.WriteFile(notebookConfigPath, nbData, 0644); err != nil {
-			return fmt.Errorf("failed to write notebook metadata: %w", err)
+		for _, r := range config.Notebooks {
+			existingResources = append(existingResources, Resource(r))
 		}
 	case "todo":
-		config.Todos = append(config.Todos, Todo(res))
+		for _, r := range config.Todos {
+			existingResources = append(existingResources, Resource(r))
+		}
 	case "calendar":
-		config.Calendars = append(config.Calendars, Calendar(res))
+		for _, r := range config.Calendars {
+			existingResources = append(existingResources, Resource(r))
+		}
 	}
 
-	// Save updated config
-	updatedData, err := json.MarshalIndent(config, "", "  ")
+	for _, r := range existingResources {
+		if r.Name == name {
+			res = r
+			skipConfigUpdate = true
+			break
+		}
+	}
+
+	if !skipConfigUpdate {
+		// Check if folder already exists for a new resource
+		if _, err := os.Stat(name); err == nil {
+			return fmt.Errorf("folder '%s' already exists and is not registered as a %s; %s names must be unique", name, resourceType, resourceType)
+		}
+
+		// Create a map of all existing IDs to ensure uniqueness across all types
+		existingIDs := make(map[string]bool)
+		for _, nb := range config.Notebooks {
+			existingIDs[nb.ID] = true
+		}
+		for _, t := range config.Todos {
+			existingIDs[t.ID] = true
+		}
+		for _, c := range config.Calendars {
+			existingIDs[c.ID] = true
+		}
+
+		// Generate a unique ID
+		newID := GenerateID()
+		for existingIDs[newID] {
+			newID = GenerateID()
+		}
+
+		res = Resource{
+			ID:        newID,
+			Name:      name,
+			CreatedAt: time.Now().Format(time.RFC3339),
+		}
+
+		// Add to correct slice
+		switch resourceType {
+		case "notebook":
+			config.Notebooks = append(config.Notebooks, Notebook(res))
+		case "todo":
+			config.Todos = append(config.Todos, Todo(res))
+		case "calendar":
+			config.Calendars = append(config.Calendars, Calendar(res))
+		}
+
+		// Save updated config
+		updatedData, err := json.MarshalIndent(config, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal updated config: %w", err)
+		}
+
+		if err := os.WriteFile(filename, updatedData, 0644); err != nil {
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+	}
+
+	// Handle folder and hidden .nocti.json for all resource types
+	// Create directory if it doesn't exist
+	if _, err := os.Stat(name); os.IsNotExist(err) {
+		if err := os.Mkdir(name, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", name, err)
+		}
+	}
+
+	// Create or update .nocti.json inside the resource folder
+	resourceConfigPath := fmt.Sprintf("%s/.nocti.json", name)
+	if _, err := os.Stat(resourceConfigPath); err == nil && !Overwrite {
+		return fmt.Errorf("file %s already exists and will not be overwritten (use -o to overwrite)", resourceConfigPath)
+	}
+
+	metadata := map[string]string{
+		"id":         res.ID,
+		"type":       resourceType,
+		"created_at": res.CreatedAt,
+	}
+	metadataData, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal updated config: %w", err)
+		return fmt.Errorf("failed to marshal %s metadata: %w", resourceType, err)
 	}
 
-	if err := os.WriteFile(filename, updatedData, 0644); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+	if err := os.WriteFile(resourceConfigPath, metadataData, 0644); err != nil {
+		return fmt.Errorf("failed to write %s metadata: %w", resourceType, err)
 	}
 
-	fmt.Printf("Successfully created %s: %s (ID: %s)\n", resourceType, name, newID)
+	fmt.Printf("Successfully created %s: %s (ID: %s)\n", resourceType, name, res.ID)
 	return nil
 }
 
