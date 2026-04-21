@@ -55,6 +55,33 @@ func TestCreateResource(t *testing.T) {
 		if config.Notebooks[0].ID == "" {
 			t.Error("Notebook ID should not be empty")
 		}
+
+		// Verify directory creation
+		if info, err := os.Stat("test-notebook"); os.IsNotExist(err) {
+			t.Error("Expected directory 'test-notebook' to be created")
+		} else if !info.IsDir() {
+			t.Error("Expected 'test-notebook' to be a directory")
+		}
+	})
+
+	t.Run("Create a notebook when directory already exists", func(t *testing.T) {
+		dirName := "existing-notebook"
+		if err := os.Mkdir(dirName, 0755); err != nil {
+			t.Fatalf("Failed to create pre-existing directory: %v", err)
+		}
+
+		cmd.ResourceName = dirName
+		err := cmd.CreateResource("notebook")
+		if err != nil {
+			t.Errorf("CreateResource('notebook') failed when directory exists: %v", err)
+		}
+
+		// Verify directory still exists
+		if info, err := os.Stat(dirName); os.IsNotExist(err) {
+			t.Error("Expected directory 'existing-notebook' to still exist")
+		} else if !info.IsDir() {
+			t.Error("Expected 'existing-notebook' to be a directory")
+		}
 	})
 
 	t.Run("Create a new todo list", func(t *testing.T) {
@@ -87,9 +114,9 @@ func TestCreateResource(t *testing.T) {
 		var config cmd.FullConfig
 		json.Unmarshal(updatedData, &config)
 
-		// Total notebooks should be 3 (1 from first test + 2 from this one)
-		if len(config.Notebooks) != 3 {
-			t.Errorf("Expected 3 notebooks total, got %d", len(config.Notebooks))
+		// Total notebooks should be 4 (1 from first test + 1 from second + 2 from this one)
+		if len(config.Notebooks) != 4 {
+			t.Errorf("Expected 4 notebooks total, got %d", len(config.Notebooks))
 		}
 
 		ids := make(map[string]bool)

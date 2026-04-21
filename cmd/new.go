@@ -139,6 +139,12 @@ func CreateResource(resourceType string) error {
 	switch resourceType {
 	case "notebook":
 		config.Notebooks = append(config.Notebooks, Notebook(res))
+		// Create directory if it doesn't exist
+		if _, err := os.Stat(name); os.IsNotExist(err) {
+			if err := os.Mkdir(name, 0755); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", name, err)
+			}
+		}
 	case "todo":
 		config.Todos = append(config.Todos, Todo(res))
 	case "calendar":
