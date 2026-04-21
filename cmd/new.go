@@ -83,6 +83,7 @@ Resources are stored in the .nocti/nocti.json file in your project directory.`,
 }
 
 var ResourceName string
+var Overwrite bool
 
 func CreateResource(resourceType string) error {
 	filename := ".nocti/nocti.json"
@@ -145,6 +146,26 @@ func CreateResource(resourceType string) error {
 				return fmt.Errorf("failed to create directory %s: %w", name, err)
 			}
 		}
+
+		// Create or update .nocti.json inside the notebook folder
+		notebookConfigPath := fmt.Sprintf("%s/.nocti.json", name)
+		if _, err := os.Stat(notebookConfigPath); err == nil && !Overwrite {
+			return fmt.Errorf("file %s already exists and will not be overwritten (use -o to overwrite)", notebookConfigPath)
+		}
+
+		nbMetadata := map[string]string{
+			"id":         res.ID,
+			"type":       "notebook",
+			"created_at": res.CreatedAt,
+		}
+		nbData, err := json.MarshalIndent(nbMetadata, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal notebook metadata: %w", err)
+		}
+
+		if err := os.WriteFile(notebookConfigPath, nbData, 0644); err != nil {
+			return fmt.Errorf("failed to write notebook metadata: %w", err)
+		}
 	case "todo":
 		config.Todos = append(config.Todos, Todo(res))
 	case "calendar":
@@ -191,6 +212,7 @@ var newCalendarCmd = &cobra.Command{
 
 func init() {
 	NewCmd.PersistentFlags().StringVarP(&ResourceName, "name", "n", "", "Name of the resource to create")
+	NewCmd.PersistentFlags().BoolVarP(&Overwrite, "overwrite", "o", false, "Overwrite existing .nocti.json file in notebook directory")
 	NewCmd.AddCommand(newNotebookCmd)
 	NewCmd.AddCommand(newTodoCmd)
 	NewCmd.AddCommand(newCalendarCmd)

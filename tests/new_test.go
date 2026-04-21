@@ -62,6 +62,19 @@ func TestCreateResource(t *testing.T) {
 		} else if !info.IsDir() {
 			t.Error("Expected 'test-notebook' to be a directory")
 		}
+
+		// Verify .nocti.json creation
+		metadataPath := "test-notebook/.nocti.json"
+		if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
+			t.Error("Expected '.nocti.json' to be created in notebook directory")
+		} else {
+			data, _ := os.ReadFile(metadataPath)
+			var metadata map[string]string
+			json.Unmarshal(data, &metadata)
+			if metadata["id"] == "" || metadata["type"] != "notebook" || metadata["created_at"] == "" {
+				t.Errorf("Metadata in .nocti.json is incorrect: %v", metadata)
+			}
+		}
 	})
 
 	t.Run("Create a notebook when directory already exists", func(t *testing.T) {
@@ -71,16 +84,52 @@ func TestCreateResource(t *testing.T) {
 		}
 
 		cmd.ResourceName = dirName
+		cmd.Overwrite = false
 		err := cmd.CreateResource("notebook")
 		if err != nil {
 			t.Errorf("CreateResource('notebook') failed when directory exists: %v", err)
 		}
 
-		// Verify directory still exists
+		// Verify directory still exists and .nocti.json is created
 		if info, err := os.Stat(dirName); os.IsNotExist(err) {
 			t.Error("Expected directory 'existing-notebook' to still exist")
 		} else if !info.IsDir() {
 			t.Error("Expected 'existing-notebook' to be a directory")
+		}
+
+		if _, err := os.Stat(dirName + "/.nocti.json"); os.IsNotExist(err) {
+			t.Error("Expected '.nocti.json' to be created in existing notebook directory")
+		}
+	})
+
+	t.Run("Fail when .nocti.json already exists and no overwrite flag", func(t *testing.T) {
+		dirName := "no-overwrite"
+		os.Mkdir(dirName, 0755)
+		os.WriteFile(dirName+"/.nocti.json", []byte("{}"), 0644)
+
+		cmd.ResourceName = dirName
+		cmd.Overwrite = false
+		err := cmd.CreateResource("notebook")
+		if err == nil {
+			t.Error("Expected error when .nocti.json exists and overwrite is false")
+		}
+	})
+
+	t.Run("Succeed when .nocti.json already exists and overwrite flag is set", func(t *testing.T) {
+		dirName := "yes-overwrite"
+		os.Mkdir(dirName, 0755)
+		os.WriteFile(dirName+"/.nocti.json", []byte("old content"), 0644)
+
+		cmd.ResourceName = dirName
+		cmd.Overwrite = true
+		err := cmd.CreateResource("notebook")
+		if err != nil {
+			t.Errorf("Expected success when .nocti.json exists and overwrite is true: %v", err)
+		}
+
+		data, _ := os.ReadFile(dirName + "/.nocti.json")
+		if string(data) == "old content" {
+			t.Error("Expected .nocti.json to be overwritten")
 		}
 	})
 
@@ -114,9 +163,9 @@ func TestCreateResource(t *testing.T) {
 		var config cmd.FullConfig
 		json.Unmarshal(updatedData, &config)
 
-		// Total notebooks should be 4 (1 from first test + 1 from second + 2 from this one)
-		if len(config.Notebooks) != 4 {
-			t.Errorf("Expected 4 notebooks total, got %d", len(config.Notebooks))
+		// Total notebooks should be 5 (1 from first test + 1 from second + 1 from successful overwrite test + 2 from this one)
+		if len(config.Notebooks) != 5 {
+			t.Errorf("Expected 5 notebooks total, got %d", len(config.Notebooks))
 		}
 
 		ids := make(map[string]bool)
