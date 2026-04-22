@@ -242,6 +242,43 @@ func TestCreateResource(t *testing.T) {
 		}
 	})
 
+	t.Run("Create a nested resource", func(t *testing.T) {
+		// Create a parent notebook
+		cmd.ResourceName = "parent-nb"
+		cmd.CreateResource("notebook")
+
+		// Enter the parent directory
+		os.Chdir("parent-nb")
+		defer os.Chdir("..")
+
+		// Create a child notebook
+		cmd.ResourceName = "child-nb"
+		err := cmd.CreateResource("notebook")
+		if err != nil {
+			t.Errorf("Failed to create nested resource: %v", err)
+		}
+
+		// Verify parent's .nocti.json has the child in 'resources'
+		data, _ := os.ReadFile(".nocti.json")
+		var metadata map[string]interface{}
+		json.Unmarshal(data, &metadata)
+
+		resources, ok := metadata["resources"].([]interface{})
+		if !ok || len(resources) != 1 {
+			t.Errorf("Expected 1 nested resource, got %v", metadata["resources"])
+		}
+
+		child := resources[0].(map[string]interface{})
+		if child["type"] != "notebook" {
+			t.Errorf("Expected nested resource type 'notebook', got %v", child["type"])
+		}
+
+		// Verify child's directory and .nocti.json
+		if _, err := os.Stat("child-nb/.nocti.json"); os.IsNotExist(err) {
+			t.Error("Expected child notebook directory and .nocti.json to exist")
+		}
+	})
+
 	t.Run("Create multiple resources and check unique IDs", func(t *testing.T) {
 		cmd.ResourceName = "nb-1"
 		cmd.CreateResource("notebook")
@@ -257,22 +294,11 @@ func TestCreateResource(t *testing.T) {
 		// 1 (existing-notebook - pre-registered)
 		// 1 (no-overwrite - pre-registered)
 		// 1 (yes-overwrite - pre-registered)
-		// 1 (unregistered-folder - fails, so not added)
-		// 1 (re-creation of test-notebook - not added)
+		// 2 (parent-nb, child-nb)
 		// 2 (nb-1, nb-2)
-		// Wait, let's recount:
-		// 1. "Create a new notebook" -> test-notebook (1)
-		// 2. "Create a notebook when directory already exists" -> manually added "existing-notebook" (2)
-		// 3. "Fail when .nocti.json already exists" -> manually added "no-overwrite" (3)
-		// 4. "Succeed when .nocti.json already exists" -> manually added "yes-overwrite" (4)
-		// 5. "Re-creating a notebook" -> test-notebook (already exists, count stays 4)
-		// 6. "Fail when folder exists but not in config" -> unregistered-folder (fails, count stays 4)
-		// 7. "Create multiple resources" -> nb-1, nb-2 (6 total)
-
-		if len(config.Notebooks) != 6 {
-			t.Errorf("Expected 6 notebooks total, got %d", len(config.Notebooks))
+		if len(config.Notebooks) != 8 {
+			t.Errorf("Expected 8 notebooks total, got %d", len(config.Notebooks))
 		}
-
 		ids := make(map[string]bool)
 		for _, nb := range config.Notebooks {
 			if ids[nb.ID] {

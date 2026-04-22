@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -52,8 +53,9 @@ var NewCmd = &cobra.Command{
 	Long: `Create a new resource like a notebook, todo list, or calendar.
 Resources are stored in the .nocti/nocti.json file in your project directory.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if _, err := os.Stat(".nocti/nocti.json"); os.IsNotExist(err) {
-			return fmt.Errorf("you need to init with `nocti init` before creating new resources")
+		_, err := findProjectRoot()
+		if err != nil {
+			return fmt.Errorf("you need to init with `nocti init` before creating new resources (error: %v)", err)
 		}
 		return nil
 	},
@@ -82,11 +84,33 @@ Resources are stored in the .nocti/nocti.json file in your project directory.`,
 	},
 }
 
+func findProjectRoot() (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(wd, ".nocti", "nocti.json")); err == nil {
+			return wd, nil
+		}
+		parent := filepath.Dir(wd)
+		if parent == wd {
+			break
+		}
+		wd = parent
+	}
+	return "", fmt.Errorf(".nocti/nocti.json not found")
+}
+
 var ResourceName string
 var Overwrite bool
 
 func CreateResource(resourceType string) error {
-	filename := ".nocti/nocti.json"
+	root, err := findProjectRoot()
+	if err != nil {
+		return err
+	}
+	filename := filepath.Join(root, ".nocti/nocti.json")
 
 	// Use flag if provided, otherwise prompt
 	name := ResourceName
@@ -200,17 +224,51 @@ func CreateResource(resourceType string) error {
 	}
 
 	// Create or update .nocti.json inside the resource folder
-	resourceConfigPath := fmt.Sprintf("%s/.nocti.json", name)
+	resourceConfigPath := filepath.Join(name, ".nocti.json")
 	if _, err := os.Stat(resourceConfigPath); err == nil && !Overwrite {
 		return fmt.Errorf("file %s already exists and will not be overwritten (use -o to overwrite)", resourceConfigPath)
 	}
 
-	metadata := map[string]string{
+	resInfo := map[string]interface{}{
 		"id":         res.ID,
 		"type":       resourceType,
 		"created_at": res.CreatedAt,
 	}
-	metadataData, err := json.MarshalIndent(metadata, "", "  ")
+
+	// If we are inside another resource, update its .nocti.json
+	if _, err := os.Stat(".nocti.json"); err == nil {
+		localData, err := os.ReadFile(".nocti.json")
+		if err == nil {
+			var localConfig map[string]interface{}
+			if err := json.Unmarshal(localData, &localConfig); err == nil {
+				resources, ok := localConfig["resources"].([]interface{})
+				if !ok {
+					resources = []interface{}{}
+				}
+
+				// Check if already in list (e.g. if re-creating)
+				found := false
+				for i, r := range resources {
+					if rm, ok := r.(map[string]interface{}); ok && rm["id"] == res.ID {
+						resources[i] = resInfo
+						found = true
+						break
+					}
+				}
+				if !found {
+					resources = append(resources, resInfo)
+				}
+				localConfig["resources"] = resources
+
+				updatedLocalData, err := json.MarshalIndent(localConfig, "", "  ")
+				if err == nil {
+					os.WriteFile(".nocti.json", updatedLocalData, 0644)
+				}
+			}
+		}
+	}
+
+	metadataData, err := json.MarshalIndent(resInfo, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal %s metadata: %w", resourceType, err)
 	}
