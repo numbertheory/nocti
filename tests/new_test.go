@@ -71,7 +71,7 @@ func TestCreateResource(t *testing.T) {
 			data, _ := os.ReadFile(metadataPath)
 			var metadata map[string]string
 			json.Unmarshal(data, &metadata)
-			if metadata["id"] == "" || metadata["type"] != "notebook" || metadata["created_at"] == "" {
+			if metadata["id"] == "" || metadata["name"] != "test-notebook" || metadata["type"] != "notebook" || metadata["created_at"] == "" {
 				t.Errorf("Metadata in .nocti.json is incorrect: %v", metadata)
 			}
 		}
@@ -247,6 +247,18 @@ func TestCreateResource(t *testing.T) {
 		cmd.ResourceName = "parent-nb"
 		cmd.CreateResource("notebook")
 
+		// Get parent ID from main config
+		data, _ := os.ReadFile(".nocti/nocti.json")
+		var config cmd.FullConfig
+		json.Unmarshal(data, &config)
+		var parentID string
+		for _, nb := range config.Notebooks {
+			if nb.Name == "parent-nb" {
+				parentID = nb.ID
+				break
+			}
+		}
+
 		// Enter the parent directory
 		os.Chdir("parent-nb")
 		defer os.Chdir("..")
@@ -259,18 +271,44 @@ func TestCreateResource(t *testing.T) {
 		}
 
 		// Verify parent's .nocti.json has the child in 'resources'
-		data, _ := os.ReadFile(".nocti.json")
-		var metadata map[string]interface{}
-		json.Unmarshal(data, &metadata)
+		data, _ = os.ReadFile(".nocti.json")
+		var localMetadata map[string]interface{}
+		json.Unmarshal(data, &localMetadata)
 
-		resources, ok := metadata["resources"].([]interface{})
+		resources, ok := localMetadata["resources"].([]interface{})
 		if !ok || len(resources) != 1 {
-			t.Errorf("Expected 1 nested resource, got %v", metadata["resources"])
+			t.Errorf("Expected 1 nested resource, got %v", localMetadata["resources"])
 		}
 
 		child := resources[0].(map[string]interface{})
 		if child["type"] != "notebook" {
 			t.Errorf("Expected nested resource type 'notebook', got %v", child["type"])
+		}
+
+		// Verify child's parent in main nocti.json
+		updatedData, _ := os.ReadFile("../.nocti/nocti.json")
+		var updatedConfig cmd.FullConfig
+		json.Unmarshal(updatedData, &updatedConfig)
+
+		found := false
+		for _, nb := range updatedConfig.Notebooks {
+			if nb.Name == "child-nb" {
+				if nb.Parent == nil {
+					t.Error("Expected Parent to be set for child-nb")
+				} else {
+					if nb.Parent.ID != parentID {
+						t.Errorf("Expected Parent ID '%s', got '%s'", parentID, nb.Parent.ID)
+					}
+					if nb.Parent.Name != "parent-nb" {
+						t.Errorf("Expected Parent Name 'parent-nb', got '%s'", nb.Parent.Name)
+					}
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("Child notebook not found in main nocti.json")
 		}
 
 		// Verify child's directory and .nocti.json

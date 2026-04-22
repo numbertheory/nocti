@@ -16,9 +16,15 @@ import (
 
 // Resource defines the common fields for all nocti resources
 type Resource struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	CreatedAt string `json:"created_at"`
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	CreatedAt string  `json:"created_at"`
+	Parent    *Parent `json:"parent,omitempty"`
+}
+
+type Parent struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // Notebook defines the structure of a notebook entry
@@ -112,6 +118,24 @@ func CreateResource(resourceType string) error {
 	}
 	filename := filepath.Join(root, ".nocti/nocti.json")
 
+	// Detect parent resource if inside one
+	var parentID string
+	var parentName string
+	if _, err := os.Stat(".nocti.json"); err == nil {
+		localData, err := os.ReadFile(".nocti.json")
+		if err == nil {
+			var localConfig map[string]interface{}
+			if err := json.Unmarshal(localData, &localConfig); err == nil {
+				if id, ok := localConfig["id"].(string); ok {
+					parentID = id
+				}
+				if name, ok := localConfig["name"].(string); ok {
+					parentName = name
+				}
+			}
+		}
+	}
+
 	// Use flag if provided, otherwise prompt
 	name := ResourceName
 	if name == "" {
@@ -194,6 +218,13 @@ func CreateResource(resourceType string) error {
 			CreatedAt: time.Now().Format(time.RFC3339),
 		}
 
+		if parentID != "" {
+			res.Parent = &Parent{
+				ID:   parentID,
+				Name: parentName,
+			}
+		}
+
 		// Add to correct slice
 		switch resourceType {
 		case "notebook":
@@ -231,8 +262,15 @@ func CreateResource(resourceType string) error {
 
 	resInfo := map[string]interface{}{
 		"id":         res.ID,
+		"name":       res.Name,
 		"type":       resourceType,
 		"created_at": res.CreatedAt,
+	}
+	if res.Parent != nil {
+		resInfo["parent"] = map[string]string{
+			"id":   res.Parent.ID,
+			"name": res.Parent.Name,
+		}
 	}
 
 	// If we are inside another resource, update its .nocti.json
