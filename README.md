@@ -1,90 +1,41 @@
 # Nocti
 
-Nocti is a CLI tool for note-taking and knowledge management. It allows you to initialize projects and manage resources like notebooks, todo lists, and calendars directly from your terminal.
+Nocti is a specialized CLI tool designed for developers and power users who want to manage their notes, tasks, and schedules directly from the terminal. 
 
-## Features
+Built on a foundation of local-first principles, Nocti organizes your knowledge into a hierarchy of directories, using simple JSON files for metadata and standard text formats (Markdown and TXT) for content.
 
-- **Project Initialization**: Quickly set up a new Nocti project with a local configuration.
-- **Resource Management**: Create and track different types of resources:
-  - Notebooks
-  - Todo Lists
-  - Calendars
-- **Local Storage**: All data is stored locally in a `.nocti/nocti.json` file within your project directory.
-- **Unique ID Generation**: Automatic generation of unique 6-character hex IDs for all resources.
+## Key Concepts
 
-## Project Structure
+*   **Projects**: A project is the root container for all your work, initialized with a central registry.
+*   **Resources**: The building blocks of your organization. Nocti currently supports three types:
+    *   **Notebooks**: For long-form notes and documentation.
+    *   **Todo Lists**: For task management.
+    *   **Calendars**: For scheduling.
+*   **Hierarchy**: Resources can be nested, allowing you to create complex structures that reflect your mental model (e.g., a "Project Tasks" todo list inside a "Work" notebook).
 
-- `main.go`: The entry point of the application.
-- `cmd/`: Contains the CLI command definitions (built with Cobra).
-  - `root.go`: The base command and versioning.
-  - `init.go`: Logic for `nocti init`.
-  - `new.go`: Logic for `nocti new` and resource subcommands.
-- `tests/`: Unit tests for the application logic.
-- `Makefile`: Build and test automation.
+## Detailed Documentation
 
-## Getting Started
+For full command references and advanced usage, please see the following guides:
+
+*   [`nocti init`](docs/init.md): Setting up your project.
+*   [`nocti new`](docs/new.md): Creating and nesting resources.
+*   [`nocti list`](docs/list.md): Exploring your notebook content.
+
+## Installation
 
 ### Prerequisites
-
 - [Go](https://go.dev/doc/install) (version 1.26.2 or higher)
 
-### Installation
-
-To build and install the `nocti` binary to your local bin directory (`~/.local/bin`):
-
+### Quick Start
+To build and install the `nocti` binary to your local bin directory:
 ```bash
 make install
 ```
-
 Ensure `~/.local/bin` is in your `PATH`.
 
-### Building Locally
+## Project Structure
 
-To simply build the binary in the `build/` directory:
-
-```bash
-make build
-```
-
-### Running Tests
-
-To run the unit tests:
-
-```bash
-make test
-```
-
-## Usage
-
-### Initialize a Project
-
-Create a new Nocti project in the current directory:
-
-```bash
-nocti init
-```
-Or specify a name with a flag:
-```bash
-nocti init --project "my-notes"
-```
-
-### Create Resources
-
-You can create resources interactively:
-
-```bash
-nocti new
-```
-
-Or use specific subcommands with names:
-
-```bash
-nocti new notebook --name "Daily Journal"
-nocti new todo --name "Project Tasks"
-nocti new calendar --name "Work Schedule"
-```
-
-## Development
-
-- **Clean build artifacts**: `make clean`
-- **Show help**: `make help` or `nocti --help`
+- `cmd/`: CLI command definitions (Cobra).
+- `docs/`: Detailed command documentation.
+- `tests/`: Automated test suite.
+- `.nocti/`: Hidden project registry (created on `init`).
