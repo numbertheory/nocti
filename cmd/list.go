@@ -256,7 +256,6 @@ func runInteractiveList(entries []DisplayEntry, baseDir string) error {
 					icon = iconText
 				}
 			}
-
 			displayStr := fmt.Sprintf("%s%s%s", indent, icon, entry.Name)
 			if len(displayStr) > listWidth {
 				displayStr = displayStr[:listWidth-3] + "..."
@@ -268,7 +267,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string) error {
 				fmt.Printf("%-*s", listWidth, displayStr)
 			}
 
-			fmt.Print(" | ")
+			// Separator
+			fmt.Printf("\033[%d;%dH │ ", i+1, listWidth+1)
+		}
+
+		// Draw vertical line for the rest of the display height
+		for i := len(entries); i < displayHeight; i++ {
+			fmt.Printf("\033[%d;%dH │ ", i+1, listWidth+1)
 		}
 
 		// Preview
