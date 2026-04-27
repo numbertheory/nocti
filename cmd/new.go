@@ -36,13 +36,19 @@ type Todo Resource
 // Calendar defines the structure of a calendar entry
 type Calendar Resource
 
+type ColorsConfig struct {
+	FileList    string `json:"file_list,omitempty"`
+	PreviewPane string `json:"preview_pane,omitempty"`
+}
+
 // FullConfig to include all resource types
 type FullConfig struct {
-	Name      string     `json:"name"`
-	Version   string     `json:"version"`
-	Notebooks []Notebook `json:"notebooks,omitempty"`
-	Todos     []Todo     `json:"todos,omitempty"`
-	Calendars []Calendar `json:"calendars,omitempty"`
+	Name      string        `json:"name"`
+	Version   string        `json:"version"`
+	Colors    *ColorsConfig `json:"colors,omitempty"`
+	Notebooks []Notebook    `json:"notebooks,omitempty"`
+	Todos     []Todo        `json:"todos,omitempty"`
+	Calendars []Calendar    `json:"calendars,omitempty"`
 }
 
 func GenerateID() string {

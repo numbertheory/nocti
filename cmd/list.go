@@ -147,8 +147,32 @@ var ListCmd = &cobra.Command{
 			return nil
 		}
 
+		// Read colors: check local .nocti.json first, then fallback to main config
+		var colors *ColorsConfig
+		localConfigFile := filepath.Join(searchDir, ".nocti.json")
+		if data, err := os.ReadFile(localConfigFile); err == nil {
+			var config struct {
+				Colors *ColorsConfig `json:"colors"`
+			}
+			if err := json.Unmarshal(data, &config); err == nil && config.Colors != nil {
+				colors = config.Colors
+			}
+		}
+
+		if colors == nil {
+			if root, err := findProjectRoot(); err == nil {
+				configFile := filepath.Join(root, ".nocti/nocti.json")
+				if data, err := os.ReadFile(configFile); err == nil {
+					var config FullConfig
+					if err := json.Unmarshal(data, &config); err == nil {
+						colors = config.Colors
+					}
+				}
+			}
+		}
+
 		entries := buildDisplayEntries(files)
-		return runInteractiveList(entries, searchDir)
+		return runInteractiveList(entries, searchDir, colors)
 	},
 }
 
@@ -187,7 +211,58 @@ func findEnclosingResource() (string, string, error) {
 	return "", "", fmt.Errorf(".nocti.json not found in parents")
 }
 
-func runInteractiveList(entries []DisplayEntry, baseDir string) error {
+func getColorCode(colorName string, defaultCode string) string {
+	colors := map[string]string{
+		"black":         "\033[48;5;0m",
+		"red":           "\033[48;5;1m",
+		"green":         "\033[48;5;2m",
+		"yellow":        "\033[48;5;3m",
+		"blue":          "\033[48;5;4m",
+		"magenta":       "\033[48;5;5m",
+		"cyan":          "\033[48;5;6m",
+		"white":         "\033[48;5;7m",
+		"gray":          "\033[48;5;244m",
+		"darkgray":      "\033[48;5;236m",
+		"lightgray":     "\033[48;5;250m",
+		"silver":        "\033[48;5;7m",
+		"brightred":     "\033[48;5;9m",
+		"brightgreen":   "\033[48;5;10m",
+		"brightyellow":  "\033[48;5;11m",
+		"brightblue":    "\033[48;5;12m",
+		"brightmagenta": "\033[48;5;13m",
+		"brightcyan":    "\033[48;5;14m",
+		"brightwhite":   "\033[48;5;15m",
+		"orange":        "\033[48;5;208m",
+		"darkorange":    "\033[48;5;166m",
+		"pink":          "\033[48;5;205m",
+		"hotpink":       "\033[48;5;198m",
+		"purple":        "\033[48;5;93m",
+		"violet":        "\033[48;5;129m",
+		"brown":         "\033[48;5;94m",
+		"navy":          "\033[48;5;18m",
+		"teal":          "\033[48;5;30m",
+		"olive":         "\033[48;5;58m",
+		"maroon":        "\033[48;5;88m",
+		"aqua":          "\033[48;5;51m",
+		"fuchsia":       "\033[48;5;201m",
+		"lime":          "\033[48;5;46m",
+		"skyblue":       "\033[48;5;117m",
+		"gold":          "\033[48;5;214m",
+		"indigo":        "\033[48;5;54m",
+		"coral":         "\033[48;5;209m",
+		"turquoise":     "\033[48;5;45m",
+		"plum":          "\033[48;5;96m",
+		"orchid":        "\033[48;5;170m",
+		"salmon":        "\033[48;5;210m",
+	}
+
+	if code, ok := colors[strings.ToLower(colorName)]; ok {
+		return code
+	}
+	return defaultCode
+}
+
+func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsConfig) error {
 	// Check if stdout is a terminal
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		for _, e := range entries {
@@ -205,6 +280,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string) error {
 	defer term.Restore(int(os.Stdin.Fd()), oldState)
 
 	selectedIndex := 0
+	previewOffset := 0
+	focusList := true // true = List, false = Preview
 
 	// ANSI escape codes
 	const (
@@ -216,6 +293,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string) error {
 		reverseOff     = "\033[27m"
 		enterAltScreen = "\033[?1049h"
 		exitAltScreen  = "\033[?1049l"
+		boldOn         = "\033[1m"
+		boldOff        = "\033[22m"
+		reset          = "\033[0m"
 	)
 
 	// Icons
@@ -236,65 +316,133 @@ func runInteractiveList(entries []DisplayEntry, baseDir string) error {
 
 		fmt.Print(clearScreen + cursorHome)
 
+		// Layout Constants
+		headerHeight := 1
+		statusHeight := 1
+		contentHeight := height - headerHeight - statusHeight
+
 		listWidth := width / 3
 		if listWidth < 30 {
 			listWidth = 30
 		}
-		previewWidth := width - listWidth - 3
-		displayHeight := height - 1
+		previewWidth := width - listWidth - 5 // -3 for separator, -1 for margin, -1 for scrollbar
 
-		for i := 0; i < displayHeight && i < len(entries); i++ {
-			fmt.Printf("\033[%d;1H", i+1)
+		// 1. Draw Header Bar
+		listColor := "\033[44m"       // Default Blue
+		prevColor := "\033[48;5;208m" // Default Orange
+		if colors != nil {
+			listColor = getColorCode(colors.FileList, listColor)
+			prevColor = getColorCode(colors.PreviewPane, prevColor)
+		}
 
-			entry := entries[i]
-			indent := strings.Repeat("  ", entry.Depth)
-			icon := iconFolder
-			if entry.IsFile {
-				if strings.HasSuffix(strings.ToLower(entry.Name), ".md") {
-					icon = iconMarkdown
-				} else {
-					icon = iconText
+		fmt.Printf("\033[1;1H")
+		listHeader := " FILE LIST "
+		prevHeader := " PREVIEW "
+		if focusList {
+			listHeader = "[" + listHeader + "]"
+		} else {
+			prevHeader = "[" + prevHeader + "]"
+		}
+
+		// Draw File List Header (filled to listWidth)
+		fmt.Printf("%s%-*s%s", listColor, listWidth, listHeader, reset)
+		// Vertical separator in header row
+		fmt.Printf(" │ ")
+		// Draw Preview Header (filled to remaining width)
+		fmt.Printf("%s%-*s%s", prevColor, width-listWidth-3, prevHeader, reset)
+
+		// 2. Draw List Content
+		for i := 0; i < contentHeight; i++ {
+			row := i + headerHeight + 1
+			fmt.Printf("\033[%d;1H", row)
+
+			if i < len(entries) {
+				entry := entries[i]
+				indent := strings.Repeat("  ", entry.Depth)
+				icon := iconFolder
+				if entry.IsFile {
+					if strings.HasSuffix(strings.ToLower(entry.Name), ".md") {
+						icon = iconMarkdown
+					} else {
+						icon = iconText
+					}
 				}
-			}
-			displayStr := fmt.Sprintf("%s%s%s", indent, icon, entry.Name)
-			if len(displayStr) > listWidth {
-				displayStr = displayStr[:listWidth-3] + "..."
-			}
 
-			if i == selectedIndex {
-				fmt.Printf("%s%-*s%s", reverseOn, listWidth, displayStr, reverseOff)
+				displayStr := fmt.Sprintf("%s%s%s", indent, icon, entry.Name)
+				if len(displayStr) > listWidth {
+					displayStr = displayStr[:listWidth-3] + "..."
+				}
+
+				if i == selectedIndex {
+					fmt.Print(reverseOn)
+					if focusList {
+						fmt.Print(boldOn)
+					}
+					fmt.Printf("%-*s", listWidth, displayStr)
+					fmt.Print(reverseOff + boldOff)
+				} else {
+					fmt.Printf("%-*s", listWidth, displayStr)
+				}
 			} else {
-				fmt.Printf("%-*s", listWidth, displayStr)
+				fmt.Printf("%-*s", listWidth, "")
 			}
 
 			// Separator
-			fmt.Printf("\033[%d;%dH │ ", i+1, listWidth+1)
+			fmt.Printf("\033[%d;%dH │ ", row, listWidth+1)
 		}
 
-		// Draw vertical line for the rest of the display height
-		for i := len(entries); i < displayHeight; i++ {
-			fmt.Printf("\033[%d;%dH │ ", i+1, listWidth+1)
-		}
-
-		// Preview
-		var previewLines []string
+		// 3. Preview Content
+		var allPreviewLines []string
 		selected := entries[selectedIndex]
 		if selected.IsFile {
-			previewLines = getFilePreview(filepath.Join(baseDir, selected.RelPath), previewWidth, displayHeight)
+			allPreviewLines = getFilePreview(filepath.Join(baseDir, selected.RelPath), previewWidth)
 		} else {
-			previewLines = []string{"Directory: " + selected.RelPath}
+			allPreviewLines = []string{"Directory: " + selected.RelPath}
 		}
 
-		for j, pLine := range previewLines {
-			if j >= displayHeight {
-				break
+		// Bound check previewOffset
+		if previewOffset < 0 {
+			previewOffset = 0
+		}
+		if previewOffset > len(allPreviewLines)-contentHeight && len(allPreviewLines) > contentHeight {
+			previewOffset = len(allPreviewLines) - contentHeight
+		} else if len(allPreviewLines) <= contentHeight {
+			previewOffset = 0
+		}
+
+		for j := 0; j < contentHeight && (j+previewOffset) < len(allPreviewLines); j++ {
+			pLine := allPreviewLines[j+previewOffset]
+			fmt.Printf("\033[%d;%dH%s", j+headerHeight+1, listWidth+5, pLine)
+		}
+
+		// 4. Draw Scrollbar
+		if len(allPreviewLines) > contentHeight {
+			scrollbarX := width
+			thumbHeight := (contentHeight * contentHeight) / len(allPreviewLines)
+			if thumbHeight < 1 {
+				thumbHeight = 1
 			}
-			fmt.Printf("\033[%d;%dH%s", j+1, listWidth+4, pLine)
+
+			thumbPos := 0
+			if len(allPreviewLines) > contentHeight {
+				thumbPos = (previewOffset * (contentHeight - thumbHeight)) / (len(allPreviewLines) - contentHeight)
+			}
+
+			for i := 0; i < contentHeight; i++ {
+				fmt.Printf("\033[%d;%dH", i+headerHeight+1, scrollbarX)
+				if i >= thumbPos && i < thumbPos+thumbHeight {
+					fmt.Print(reverseOn + " " + reverseOff)
+				} else {
+					fmt.Print("│")
+				}
+			}
 		}
 
-		fmt.Printf("\033[%d;1H%sPress 'q' to exit | Use arrow keys to navigate%s", height, reverseOn, reverseOff)
+		// 5. Status bar
+		fmt.Printf("\033[%d;1H%s Press 'q' to exit | TAB to switch focus | Arrows/PgUp/PgDn to navigate %s", height, reverseOn, reverseOff)
 
-		b := make([]byte, 3)
+		// Input handling
+		b := make([]byte, 8)
 		n, err := os.Stdin.Read(b)
 		if err != nil {
 			return err
@@ -304,15 +452,42 @@ func runInteractiveList(entries []DisplayEntry, baseDir string) error {
 			if b[0] == 'q' || b[0] == 'Q' || b[0] == 3 {
 				break
 			}
-		} else if n == 3 && b[0] == 27 && b[1] == 91 {
-			switch b[2] {
-			case 65: // Up
-				if selectedIndex > 0 {
-					selectedIndex--
+			if b[0] == '\t' {
+				focusList = !focusList
+			}
+		} else if n >= 3 && b[0] == 27 && b[1] == 91 {
+			if focusList {
+				switch b[2] {
+				case 65: // Up
+					if selectedIndex > 0 {
+						selectedIndex--
+						previewOffset = 0
+					}
+				case 66: // Down
+					if selectedIndex < len(entries)-1 {
+						selectedIndex++
+						previewOffset = 0
+					}
 				}
-			case 66: // Down
-				if selectedIndex < len(entries)-1 {
-					selectedIndex++
+			} else {
+				// Preview focus navigation
+				switch b[2] {
+				case 65: // Up
+					if previewOffset > 0 {
+						previewOffset--
+					}
+				case 66: // Down
+					if previewOffset < len(allPreviewLines)-contentHeight {
+						previewOffset++
+					}
+				case 53: // PgUp (ESC [ 5 ~)
+					if n >= 4 && b[3] == 126 {
+						previewOffset -= contentHeight
+					}
+				case 54: // PgDn (ESC [ 6 ~)
+					if n >= 4 && b[3] == 126 {
+						previewOffset += contentHeight
+					}
 				}
 			}
 		}
@@ -321,7 +496,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string) error {
 	return nil
 }
 
-func getFilePreview(path string, width, height int) []string {
+func getFilePreview(path string, width int) []string {
 	file, err := os.Open(path)
 	if err != nil {
 		return []string{"Error opening file"}
@@ -330,7 +505,7 @@ func getFilePreview(path string, width, height int) []string {
 
 	var lines []string
 	scanner := bufio.NewScanner(file)
-	for i := 0; i < height && scanner.Scan(); i++ {
+	for scanner.Scan() {
 		line := scanner.Text()
 		if len(line) > width {
 			line = line[:width]
