@@ -15,6 +15,43 @@ import (
 
 var RawOutput bool
 
+type DisplayEntry struct {
+	RelPath string
+	IsFile  bool
+	Depth   int
+	Name    string
+}
+
+func buildDisplayEntries(files []string) []DisplayEntry {
+	var entries []DisplayEntry
+	seenDirs := make(map[string]bool)
+
+	for _, f := range files {
+		parts := strings.Split(f, string(os.PathSeparator))
+		// Process parent directories
+		for i := 0; i < len(parts)-1; i++ {
+			dirPath := filepath.Join(parts[:i+1]...)
+			if !seenDirs[dirPath] {
+				entries = append(entries, DisplayEntry{
+					RelPath: dirPath,
+					IsFile:  false,
+					Depth:   i,
+					Name:    parts[i],
+				})
+				seenDirs[dirPath] = true
+			}
+		}
+		// Process the file itself
+		entries = append(entries, DisplayEntry{
+			RelPath: f,
+			IsFile:  true,
+			Depth:   len(parts) - 1,
+			Name:    parts[len(parts)-1],
+		})
+	}
+	return entries
+}
+
 var ListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List files in a notebook resource",
@@ -110,7 +147,8 @@ var ListCmd = &cobra.Command{
 			return nil
 		}
 
-		return runInteractiveList(files, searchDir)
+		entries := buildDisplayEntries(files)
+		return runInteractiveList(entries, searchDir)
 	},
 }
 
@@ -149,11 +187,13 @@ func findEnclosingResource() (string, string, error) {
 	return "", "", fmt.Errorf(".nocti.json not found in parents")
 }
 
-func runInteractiveList(files []string, baseDir string) error {
+func runInteractiveList(entries []DisplayEntry, baseDir string) error {
 	// Check if stdout is a terminal
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		for _, f := range files {
-			fmt.Println(f)
+		for _, e := range entries {
+			if e.IsFile {
+				fmt.Println(e.RelPath)
+			}
 		}
 		return nil
 	}
@@ -168,16 +208,25 @@ func runInteractiveList(files []string, baseDir string) error {
 
 	// ANSI escape codes
 	const (
-		clearScreen = "\033[2J"
-		cursorHome  = "\033[H"
-		hideCursor  = "\033[?25l"
-		showCursor  = "\033[?25h"
-		reverseOn   = "\033[7m"
-		reverseOff  = "\033[27m"
+		clearScreen    = "\033[2J"
+		cursorHome     = "\033[H"
+		hideCursor     = "\033[?25l"
+		showCursor     = "\033[?25h"
+		reverseOn      = "\033[7m"
+		reverseOff     = "\033[27m"
+		enterAltScreen = "\033[?1049h"
+		exitAltScreen  = "\033[?1049l"
 	)
 
-	fmt.Print(hideCursor)
-	defer fmt.Print(showCursor)
+	// Icons
+	const (
+		iconFolder   = " "
+		iconText     = " "
+		iconMarkdown = " "
+	)
+
+	fmt.Print(enterAltScreen + hideCursor)
+	defer fmt.Print(showCursor + exitAltScreen)
 
 	for {
 		width, height, err := term.GetSize(int(os.Stdout.Fd()))
@@ -187,48 +236,59 @@ func runInteractiveList(files []string, baseDir string) error {
 
 		fmt.Print(clearScreen + cursorHome)
 
-		// Layout: Left column (files), Right column (preview)
-		// Status bar at the bottom (last line)
 		listWidth := width / 3
-		if listWidth < 20 {
-			listWidth = 20
+		if listWidth < 30 {
+			listWidth = 30
 		}
-		previewWidth := width - listWidth - 3 // -3 for separator and margin
+		previewWidth := width - listWidth - 3
 		displayHeight := height - 1
 
-		for i := 0; i < displayHeight && i < len(files); i++ {
-			// Move cursor to correct line
+		for i := 0; i < displayHeight && i < len(entries); i++ {
 			fmt.Printf("\033[%d;1H", i+1)
 
-			filename := files[i]
-			if len(filename) > listWidth {
-				filename = filename[:listWidth-3] + "..."
+			entry := entries[i]
+			indent := strings.Repeat("  ", entry.Depth)
+			icon := iconFolder
+			if entry.IsFile {
+				if strings.HasSuffix(strings.ToLower(entry.Name), ".md") {
+					icon = iconMarkdown
+				} else {
+					icon = iconText
+				}
+			}
+
+			displayStr := fmt.Sprintf("%s%s%s", indent, icon, entry.Name)
+			if len(displayStr) > listWidth {
+				displayStr = displayStr[:listWidth-3] + "..."
 			}
 
 			if i == selectedIndex {
-				fmt.Printf("%s%-*s%s", reverseOn, listWidth, filename, reverseOff)
+				fmt.Printf("%s%-*s%s", reverseOn, listWidth, displayStr, reverseOff)
 			} else {
-				fmt.Printf("%-*s", listWidth, filename)
+				fmt.Printf("%-*s", listWidth, displayStr)
 			}
 
-			// Separator
 			fmt.Print(" | ")
 		}
 
-		// Preview - show it once for the whole screen
-		previewLines := getFilePreview(filepath.Join(baseDir, files[selectedIndex]), previewWidth, displayHeight)
+		// Preview
+		var previewLines []string
+		selected := entries[selectedIndex]
+		if selected.IsFile {
+			previewLines = getFilePreview(filepath.Join(baseDir, selected.RelPath), previewWidth, displayHeight)
+		} else {
+			previewLines = []string{"Directory: " + selected.RelPath}
+		}
+
 		for j, pLine := range previewLines {
 			if j >= displayHeight {
 				break
 			}
-			// Move cursor to correct position for preview lines
 			fmt.Printf("\033[%d;%dH%s", j+1, listWidth+4, pLine)
 		}
 
-		// Status bar
 		fmt.Printf("\033[%d;1H%sPress 'q' to exit | Use arrow keys to navigate%s", height, reverseOn, reverseOff)
 
-		// Input handling
 		b := make([]byte, 3)
 		n, err := os.Stdin.Read(b)
 		if err != nil {
@@ -236,17 +296,17 @@ func runInteractiveList(files []string, baseDir string) error {
 		}
 
 		if n == 1 {
-			if b[0] == 'q' || b[0] == 'Q' || b[0] == 3 { // 3 is Ctrl-C
+			if b[0] == 'q' || b[0] == 'Q' || b[0] == 3 {
 				break
 			}
-		} else if n == 3 && b[0] == 27 && b[1] == 91 { // ESC [
+		} else if n == 3 && b[0] == 27 && b[1] == 91 {
 			switch b[2] {
 			case 65: // Up
 				if selectedIndex > 0 {
 					selectedIndex--
 				}
 			case 66: // Down
-				if selectedIndex < len(files)-1 {
+				if selectedIndex < len(entries)-1 {
 					selectedIndex++
 				}
 			}
