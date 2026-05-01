@@ -42,6 +42,25 @@ If no colors are defined, the following defaults are used:
 *   `file_list`: `blue`
 *   `preview_pane`: `orange`
 
+## Editor Configuration
+
+You can customize which editor is used when you press **ENTER** on a file in the list.
+
+### Setting the Editor
+
+Add an `editor` key at the top level of your main `.nocti/nocti.json` file or a specific resource's `.nocti.json` file:
+
+```json
+{
+  "name": "my-project",
+  "version": "development",
+  "editor": "nvim",
+  ...
+}
+```
+
+If no editor is specified, Nocti defaults to `nano`. Newly created resources inherit the editor setting from the main configuration.
+
 ## Previewing Files
 
 When using `nocti list` inside a notebook, you can:

@@ -20,6 +20,7 @@ For full command references and advanced usage, please see the following guides:
 *   [`nocti init`](docs/init.md): Setting up your project.
 *   [`nocti new`](docs/new.md): Creating and nesting resources.
 *   [`nocti list`](docs/list.md): Exploring your notebook content.
+*   [`nocti update`](docs/update.md): Synchronizing the project registry.
 
 ## Installation
 
