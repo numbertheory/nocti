@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+	Editor  string `json:"editor"`
 }
 
 var ProjectName string
@@ -54,6 +55,7 @@ var InitCmd = &cobra.Command{
 		config := Config{
 			Name:    ProjectName,
 			Version: Version,
+			Editor:  "nano",
 		}
 
 		data, err := json.MarshalIndent(config, "", "  ")

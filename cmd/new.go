@@ -45,6 +45,7 @@ type ColorsConfig struct {
 type FullConfig struct {
 	Name      string        `json:"name"`
 	Version   string        `json:"version"`
+	Editor    string        `json:"editor,omitempty"`
 	Colors    *ColorsConfig `json:"colors,omitempty"`
 	Notebooks []Notebook    `json:"notebooks,omitempty"`
 	Todos     []Todo        `json:"todos,omitempty"`
@@ -266,11 +267,17 @@ func CreateResource(resourceType string) error {
 		return fmt.Errorf("file %s already exists and will not be overwritten (use -o to overwrite)", resourceConfigPath)
 	}
 
+	editor := config.Editor
+	if editor == "" {
+		editor = "nano"
+	}
+
 	resInfo := map[string]interface{}{
 		"id":         res.ID,
 		"name":       res.Name,
 		"type":       resourceType,
 		"created_at": res.CreatedAt,
+		"editor":     editor,
 	}
 	if res.Parent != nil {
 		resInfo["parent"] = map[string]string{

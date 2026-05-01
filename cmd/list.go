@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -101,7 +102,6 @@ var ListCmd = &cobra.Command{
 				return err
 			}
 
-			// Skip the starting directory itself from the resource check
 			if path == searchDir {
 				return nil
 			}
@@ -147,32 +147,48 @@ var ListCmd = &cobra.Command{
 			return nil
 		}
 
-		// Read colors: check local .nocti.json first, then fallback to main config
+		// Read colors and editor: check local .nocti.json first, then fallback to main config
 		var colors *ColorsConfig
+		var editorCmd string
 		localConfigFile := filepath.Join(searchDir, ".nocti.json")
 		if data, err := os.ReadFile(localConfigFile); err == nil {
 			var config struct {
 				Colors *ColorsConfig `json:"colors"`
+				Editor string        `json:"editor"`
 			}
-			if err := json.Unmarshal(data, &config); err == nil && config.Colors != nil {
-				colors = config.Colors
+			if err := json.Unmarshal(data, &config); err == nil {
+				if config.Colors != nil {
+					colors = config.Colors
+				}
+				if config.Editor != "" {
+					editorCmd = config.Editor
+				}
 			}
 		}
 
-		if colors == nil {
+		if colors == nil || editorCmd == "" {
 			if root, err := findProjectRoot(); err == nil {
 				configFile := filepath.Join(root, ".nocti/nocti.json")
 				if data, err := os.ReadFile(configFile); err == nil {
 					var config FullConfig
 					if err := json.Unmarshal(data, &config); err == nil {
-						colors = config.Colors
+						if colors == nil {
+							colors = config.Colors
+						}
+						if editorCmd == "" {
+							editorCmd = config.Editor
+						}
 					}
 				}
 			}
 		}
 
+		if editorCmd == "" {
+			editorCmd = "nvim"
+		}
+
 		entries := buildDisplayEntries(files)
-		return runInteractiveList(entries, searchDir, colors)
+		return runInteractiveList(entries, searchDir, colors, editorCmd)
 	},
 }
 
@@ -262,7 +278,7 @@ func getColorCode(colorName string, defaultCode string) string {
 	return defaultCode
 }
 
-func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsConfig) error {
+func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsConfig, editorCmd string) error {
 	// Check if stdout is a terminal
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		for _, e := range entries {
@@ -439,7 +455,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		}
 
 		// 5. Status bar
-		fmt.Printf("\033[%d;1H%s Press 'q' to exit | TAB to switch focus | Arrows/PgUp/PgDn to navigate %s", height, reverseOn, reverseOff)
+		fmt.Printf("\033[%d;1H%s ENTER to edit | TAB to switch focus | Arrows to navigate | q to exit %s", height, reverseOn, reverseOff)
 
 		// Input handling
 		b := make([]byte, 8)
@@ -454,6 +470,24 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			}
 			if b[0] == '\t' {
 				focusList = !focusList
+			}
+			if b[0] == '\r' || b[0] == '\n' {
+				// Open editor
+				if entries[selectedIndex].IsFile {
+					term.Restore(int(os.Stdin.Fd()), oldState)
+					fmt.Print(showCursor + exitAltScreen)
+
+					filePath := filepath.Join(baseDir, entries[selectedIndex].RelPath)
+					cmd := exec.Command(editorCmd, filePath)
+					cmd.Stdin = os.Stdin
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+					cmd.Run()
+
+					// Re-enter raw mode and alt screen
+					oldState, _ = term.MakeRaw(int(os.Stdin.Fd()))
+					fmt.Print(enterAltScreen + hideCursor)
+				}
 			}
 		} else if n >= 3 && b[0] == 27 && b[1] == 91 {
 			if focusList {

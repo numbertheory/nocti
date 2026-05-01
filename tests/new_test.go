@@ -71,7 +71,7 @@ func TestCreateResource(t *testing.T) {
 			data, _ := os.ReadFile(metadataPath)
 			var metadata map[string]string
 			json.Unmarshal(data, &metadata)
-			if metadata["id"] == "" || metadata["name"] != "test-notebook" || metadata["type"] != "notebook" || metadata["created_at"] == "" {
+			if metadata["id"] == "" || metadata["name"] != "test-notebook" || metadata["type"] != "notebook" || metadata["created_at"] == "" || metadata["editor"] != "nano" {
 				t.Errorf("Metadata in .nocti.json is incorrect: %v", metadata)
 			}
 		}
