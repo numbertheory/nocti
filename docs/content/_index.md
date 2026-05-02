@@ -1,3 +1,7 @@
+---
+title: "Nocti"
+---
+
 # Nocti
 
 Nocti is a specialized CLI tool designed for developers and power users who want to manage their notes, tasks, and schedules directly from the terminal. 
@@ -15,12 +19,12 @@ Built on a foundation of local-first principles, Nocti organizes your knowledge 
 
 ## Detailed Documentation
 
-For full command references and advanced usage, please see the following guides in the [official documentation](https://numbertheory.github.io/nocti/):
+For full command references and advanced usage, please see the following guides:
 
-*   [`nocti init`](docs/content/docs/init.md): Setting up your project.
-*   [`nocti new`](docs/content/docs/new.md): Creating and nesting resources.
-*   [`nocti list`](docs/content/docs/list.md): Exploring your notebook content.
-*   [`nocti update`](docs/content/docs/update.md): Synchronizing the project registry.
+*   [`nocti init`](docs/init): Setting up your project.
+*   [`nocti new`](docs/new): Creating and nesting resources.
+*   [`nocti list`](docs/list): Exploring your notebook content.
+*   [`nocti update`](docs/update): Synchronizing the project registry.
 
 ## Installation
 
@@ -33,10 +37,3 @@ To build and install the `nocti` binary to your local bin directory:
 make install
 ```
 Ensure `~/.local/bin` is in your `PATH`.
-
-## Project Structure
-
-- `cmd/`: CLI command definitions (Cobra).
-- `docs/`: Detailed command documentation.
-- `tests/`: Automated test suite.
-- `.nocti/`: Hidden project registry (created on `init`).

@@ -1,0 +1,9 @@
+baseURL = 'https://numbertheory.github.io/nocti/'
+languageCode = 'en-us'
+title = 'Nocti'
+theme = 'hugo-book'
+
+[params]
+  BookRepo = "https://github.com/numbertheory/nocti"
+  BookEditPath = "edit/main/docs/content"
+  BookSearch = true
