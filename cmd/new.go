@@ -70,7 +70,7 @@ var NewCmd = &cobra.Command{
 	Long: `Create a new resource like a notebook, todo list, or calendar.
 Resources are stored in the .nocti/nocti.json file in your project directory.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		_, err := findProjectRoot()
+		_, err := FindProjectRoot()
 		if err != nil {
 			return fmt.Errorf("you need to init with `nocti init` before creating new resources (error: %v)", err)
 		}
@@ -101,7 +101,7 @@ Resources are stored in the .nocti/nocti.json file in your project directory.`,
 	},
 }
 
-func findProjectRoot() (string, error) {
+func FindProjectRoot() (string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", err
@@ -123,7 +123,7 @@ var ResourceName string
 var Overwrite bool
 
 func CreateResource(resourceType string) error {
-	root, err := findProjectRoot()
+	root, err := FindProjectRoot()
 	if err != nil {
 		return err
 	}

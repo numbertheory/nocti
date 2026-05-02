@@ -6,7 +6,7 @@ TARGET_BINARY=$(BUILD_DIR)/$(BINARY_NAME)
 VERSION=$(shell git describe --tags --always 2>/dev/null || echo "development")
 LD_FLAGS="-X nocti/cmd.Version=$(VERSION)"
 
-.PHONY: all build install clean test help
+.PHONY: all build install clean test coverage help
 
 all: build
 
@@ -16,8 +16,16 @@ build:
 	go build -ldflags $(LD_FLAGS) -o $(TARGET_BINARY) main.go
 
 test:
-	@echo "Running tests..."
-	go test -v ./...
+	@echo "Running tests with coverage..."
+	go test -v -coverprofile=coverage.out -coverpkg=nocti/cmd ./tests/...
+	go tool cover -func=coverage.out
+	@rm coverage.out
+
+coverage:
+	@echo "Generating HTML coverage report..."
+	go test -coverprofile=coverage.out -coverpkg=nocti/cmd ./tests/...
+	go tool cover -html=coverage.out
+	@rm coverage.out
 
 install: build
 	@echo "Installing $(BINARY_NAME) to $(INSTALL_DIR)..."
@@ -42,7 +50,8 @@ clean:
 help:
 	@echo "Usage:"
 	@echo "  make build    - Build the binary in $(BUILD_DIR)/"
-	@echo "  make test     - Run unit tests"
+	@echo "  make test     - Run unit tests with terminal coverage report"
+	@echo "  make coverage - Run unit tests and open HTML coverage report"
 	@echo "  make install  - Build and move the binary to $(INSTALL_DIR)"
 	@echo "  make clean    - Remove build artifacts"
 	@echo "  make help     - Show this help message"

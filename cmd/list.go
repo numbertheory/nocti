@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -23,12 +24,18 @@ type DisplayEntry struct {
 	Name    string
 }
 
-func buildDisplayEntries(files []string) []DisplayEntry {
+func BuildDisplayEntries(files []string) []DisplayEntry {
 	var entries []DisplayEntry
 	seenDirs := make(map[string]bool)
 
+	// Sort files to ensure parents are processed before children
+	sort.Strings(files)
+
 	for _, f := range files {
-		parts := strings.Split(f, string(os.PathSeparator))
+		isDirOnly := strings.HasSuffix(f, string(os.PathSeparator))
+		cleanPath := strings.TrimSuffix(f, string(os.PathSeparator))
+		parts := strings.Split(cleanPath, string(os.PathSeparator))
+
 		// Process parent directories
 		for i := 0; i < len(parts)-1; i++ {
 			dirPath := filepath.Join(parts[:i+1]...)
@@ -42,15 +49,112 @@ func buildDisplayEntries(files []string) []DisplayEntry {
 				seenDirs[dirPath] = true
 			}
 		}
-		// Process the file itself
-		entries = append(entries, DisplayEntry{
-			RelPath: f,
-			IsFile:  true,
-			Depth:   len(parts) - 1,
-			Name:    parts[len(parts)-1],
-		})
+
+		if isDirOnly {
+			// Process the empty folder itself
+			dirPath := cleanPath
+			if !seenDirs[dirPath] {
+				entries = append(entries, DisplayEntry{
+					RelPath: dirPath,
+					IsFile:  false,
+					Depth:   len(parts) - 1,
+					Name:    parts[len(parts)-1],
+				})
+				seenDirs[dirPath] = true
+			}
+		} else {
+			// Process the file itself
+			entries = append(entries, DisplayEntry{
+				RelPath: f,
+				IsFile:  true,
+				Depth:   len(parts) - 1,
+				Name:    parts[len(parts)-1],
+			})
+		}
 	}
 	return entries
+}
+
+func ScanNotebookFiles(searchDir string) ([]string, error) {
+	var results []string
+	// Map to track folders that contain relevant files or are empty
+	// but we'll use a more direct approach by walking twice or tracking.
+	// Let's use a map to track which directories are "valid"
+	validDirs := make(map[string]bool)
+
+	// First pass: identify files and their parent directories
+	err := filepath.WalkDir(searchDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == searchDir {
+			return nil
+		}
+
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			if _, err := os.Stat(filepath.Join(path, ".nocti.json")); err == nil {
+				return filepath.SkipDir
+			}
+
+			// Check if folder is empty
+			entries, err := os.ReadDir(path)
+			if err == nil && len(entries) == 0 {
+				validDirs[path] = true
+			}
+			return nil
+		}
+
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".md" || ext == ".txt" {
+			relPath, err := filepath.Rel(searchDir, path)
+			if err == nil {
+				results = append(results, relPath)
+				// Mark all parents as valid
+				parent := filepath.Dir(path)
+				for parent != searchDir && parent != "." {
+					validDirs[parent] = true
+					parent = filepath.Dir(parent)
+				}
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Add valid empty folders or folders containing valid files to results
+	// results already contains the files. We need to make sure BuildDisplayEntries
+	// handles the folder structure correctly.
+	// Actually, BuildDisplayEntries reconstructs the tree from file paths.
+	// If a folder is empty, it won't have a file path to trigger its creation.
+	// So we add "dummy" entries for empty folders.
+
+	for dir := range validDirs {
+		relDir, err := filepath.Rel(searchDir, dir)
+		if err == nil {
+			// Check if this dir is already represented by a file
+			found := false
+			for _, f := range results {
+				if strings.HasPrefix(f, relDir+string(os.PathSeparator)) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				// Add the directory itself as a result
+				// We'll append a trailing separator to distinguish it if needed,
+				// but BuildDisplayEntries should handle it if we are careful.
+				results = append(results, relDir+string(os.PathSeparator))
+			}
+		}
+	}
+
+	return results, nil
 }
 
 var ListCmd = &cobra.Command{
@@ -85,7 +189,7 @@ var ListCmd = &cobra.Command{
 			searchDir = target
 		} else {
 			// Detect if we are inside a nocti resource and if it's a notebook
-			_, resourceType, err := findEnclosingResource()
+			_, resourceType, err := FindEnclosingResource()
 			if err != nil {
 				return fmt.Errorf("not inside a nocti resource and no resource name provided: %w", err)
 			}
@@ -96,41 +200,7 @@ var ListCmd = &cobra.Command{
 			searchDir = "."
 		}
 
-		var files []string
-		err := filepath.WalkDir(searchDir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-
-			if path == searchDir {
-				return nil
-			}
-
-			if d.IsDir() {
-				// Ignore .git folders
-				if d.Name() == ".git" {
-					return filepath.SkipDir
-				}
-
-				// Check if this subdirectory is a nocti resource
-				if _, err := os.Stat(filepath.Join(path, ".nocti.json")); err == nil {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-
-			// It's a file, check extension
-			ext := strings.ToLower(filepath.Ext(path))
-			if ext == ".md" || ext == ".txt" {
-				relPath, err := filepath.Rel(searchDir, path)
-				if err == nil {
-					files = append(files, relPath)
-				}
-			}
-
-			return nil
-		})
-
+		files, err := ScanNotebookFiles(searchDir)
 		if err != nil {
 			return err
 		}
@@ -167,7 +237,7 @@ var ListCmd = &cobra.Command{
 		}
 
 		if colors == nil || editorCmd == "" {
-			if root, err := findProjectRoot(); err == nil {
+			if root, err := FindProjectRoot(); err == nil {
 				configFile := filepath.Join(root, ".nocti/nocti.json")
 				if data, err := os.ReadFile(configFile); err == nil {
 					var config FullConfig
@@ -187,12 +257,12 @@ var ListCmd = &cobra.Command{
 			editorCmd = "nvim"
 		}
 
-		entries := buildDisplayEntries(files)
+		entries := BuildDisplayEntries(files)
 		return runInteractiveList(entries, searchDir, colors, editorCmd)
 	},
 }
 
-func findEnclosingResource() (string, string, error) {
+func FindEnclosingResource() (string, string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", "", err
@@ -227,7 +297,7 @@ func findEnclosingResource() (string, string, error) {
 	return "", "", fmt.Errorf(".nocti.json not found in parents")
 }
 
-func getFGColorCode(colorName string, defaultCode string) string {
+func GetFGColorCode(colorName string, defaultCode string) string {
 	colors := map[string]string{
 		"black":         "\033[38;5;0m",
 		"red":           "\033[38;5;1m",
@@ -278,7 +348,7 @@ func getFGColorCode(colorName string, defaultCode string) string {
 	return defaultCode
 }
 
-func getColorCode(colorName string, defaultCode string) string {
+func GetColorCode(colorName string, defaultCode string) string {
 	colors := map[string]string{
 		"black":         "\033[48;5;0m",
 		"red":           "\033[48;5;1m",
@@ -351,6 +421,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 	focusList := true // true = List, false = Preview
 	showHelp := false
 
+	// Creation states
+	showCreateType := false
+	showCreateName := false
+	createTypeSelected := 0 // 0 = File, 1 = Folder
+	createInputName := ""
+
 	// ANSI escape codes
 	const (
 		clearScreen    = "\033[2J"
@@ -399,8 +475,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		listColor := "\033[44m"       // Default Blue
 		prevColor := "\033[48;5;208m" // Default Orange
 		if colors != nil {
-			listColor = getColorCode(colors.FileList, listColor)
-			prevColor = getColorCode(colors.PreviewPane, prevColor)
+			listColor = GetColorCode(colors.FileList, listColor)
+			prevColor = GetColorCode(colors.PreviewPane, prevColor)
 		}
 
 		fmt.Printf("\033[1;1H")
@@ -463,7 +539,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		var allPreviewLines []string
 		selected := entries[selectedIndex]
 		if selected.IsFile {
-			allPreviewLines = getFilePreview(filepath.Join(baseDir, selected.RelPath), previewWidth)
+			allPreviewLines = GetFilePreview(filepath.Join(baseDir, selected.RelPath), previewWidth)
 		} else {
 			allPreviewLines = []string{"Directory: " + selected.RelPath}
 		}
@@ -509,7 +585,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		// 5. Help Modal
 		if showHelp {
 			modalWidth := 50
-			modalHeight := 13 // Increased by 1 row
+			modalHeight := 14 // Increased for equal top/bottom buffer
 			if width < modalWidth {
 				modalWidth = width - 4
 			}
@@ -523,10 +599,10 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			hbFg := "\033[38;5;244m"
 
 			if colors != nil {
-				hBg = getColorCode(colors.HelpBg, hBg)
-				hFg = getFGColorCode(colors.HelpFg, hFg)
-				hbBg = getColorCode(colors.HelpBorderBg, hbBg)
-				hbFg = getFGColorCode(colors.HelpBorderFg, hbFg)
+				hBg = GetColorCode(colors.HelpBg, hBg)
+				hFg = GetFGColorCode(colors.HelpFg, hFg)
+				hbBg = GetColorCode(colors.HelpBorderBg, hbBg)
+				hbFg = GetFGColorCode(colors.HelpBorderFg, hbFg)
 			}
 
 			// Draw modal box background
@@ -551,6 +627,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				"    PgUp/PgDn  : Page Preview",
 				"",
 				"  Actions:",
+				"    n          : New File/Folder",
 				"    ENTER      : Edit File",
 				"    q          : Quit",
 				"    ESC        : Close Help",
@@ -562,8 +639,66 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			fmt.Print(reset)
 		}
 
-		// 6. Status bar
-		fmt.Printf("\033[%d;1H%s%s Ctrl+H - help %s", height, reset, reverseOn, reverseOff)
+		// 6. Create Type Modal
+		if showCreateType {
+			modalWidth := 40
+			modalHeight := 8
+			startX := (width - modalWidth) / 2
+			startY := (height - modalHeight) / 2
+
+			hBg := "\033[48;5;236m"
+			hFg := reset
+			if colors != nil {
+				hBg = GetColorCode(colors.HelpBg, hBg)
+				hFg = GetFGColorCode(colors.HelpFg, hFg)
+			}
+
+			for i := 0; i < modalHeight; i++ {
+				fmt.Printf("\033[%d;%dH%s%s%*s%s", startY+i, startX, hBg, hFg, modalWidth, "", reset)
+			}
+			fmt.Printf("\033[%d;%dH%s%s CREATE NEW %s", startY+1, startX+(modalWidth-12)/2, hBg, hFg+boldOn, reset)
+
+			options := []string{" File ", " Folder "}
+			for i, opt := range options {
+				fmt.Printf("\033[%d;%dH", startY+3+i, startX+14)
+				if i == createTypeSelected {
+					fmt.Printf("%s%s%s", reverseOn, opt, reverseOff)
+				} else {
+					fmt.Print(opt)
+				}
+			}
+			fmt.Printf("\033[%d;%dH%s%s ↑/↓ to select | ENTER to confirm %s", startY+6, startX+(modalWidth-32)/2, hBg, hFg, reset)
+		}
+
+		// 7. Create Name Modal
+		if showCreateName {
+			modalWidth := 60
+			modalHeight := 8
+			startX := (width - modalWidth) / 2
+			startY := (height - modalHeight) / 2
+
+			hBg := "\033[48;5;236m"
+			hFg := reset
+			if colors != nil {
+				hBg = GetColorCode(colors.HelpBg, hBg)
+				hFg = GetFGColorCode(colors.HelpFg, hFg)
+			}
+
+			for i := 0; i < modalHeight; i++ {
+				fmt.Printf("\033[%d;%dH%s%s%*s%s", startY+i, startX, hBg, hFg, modalWidth, "", reset)
+			}
+			typeStr := "FILE"
+			if createTypeSelected == 1 {
+				typeStr = "FOLDER"
+			}
+			fmt.Printf("\033[%d;%dH%s%s NEW %s NAME %s", startY+1, startX+(modalWidth-len(typeStr)-10)/2, hBg, hFg+boldOn, typeStr, reset)
+
+			fmt.Printf("\033[%d;%dH%s%s > %s%s%s", startY+3, startX+4, hBg, hFg, reverseOn, createInputName, reverseOff)
+			fmt.Printf("\033[%d;%dH%s%s ENTER to create | ESC to cancel %s", startY+6, startX+(modalWidth-28)/2, hBg, hFg, reset)
+		}
+
+		// 8. Status bar
+		fmt.Printf("\033[%d;1H%s%s n - new | Ctrl+H - help %s", height, reset, reverseOn, reverseOff)
 
 		// Input handling
 		b := make([]byte, 8)
@@ -582,17 +717,82 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			}
 			if b[0] == 27 { // ESC
 				showHelp = false
+				showCreateType = false
+				showCreateName = false
 				continue
 			}
 			if showHelp {
 				continue
 			}
+
+			// Creation state handling
+			if showCreateType {
+				if b[0] == '\r' || b[0] == '\n' {
+					showCreateType = false
+					showCreateName = true
+					createInputName = ""
+					continue
+				}
+			} else if showCreateName {
+				if b[0] == '\r' || b[0] == '\n' {
+					// Perform creation
+					if createInputName != "" {
+						targetDir := baseDir
+						if len(entries) > 0 {
+							selected := entries[selectedIndex]
+							if selected.IsFile {
+								targetDir = filepath.Join(baseDir, filepath.Dir(selected.RelPath))
+							} else {
+								targetDir = filepath.Join(baseDir, selected.RelPath)
+							}
+						}
+
+						newName := createInputName
+						if createTypeSelected == 0 {
+							// File
+							ext := filepath.Ext(newName)
+							if ext != ".md" && ext != ".txt" {
+								newName += ".md"
+							}
+							os.WriteFile(filepath.Join(targetDir, newName), []byte(""), 0644)
+						} else {
+							// Folder
+							os.MkdirAll(filepath.Join(targetDir, newName), 0755)
+						}
+
+						// Refresh
+						files, _ := ScanNotebookFiles(baseDir)
+						entries = BuildDisplayEntries(files)
+						// Reset selection to something reasonable if it changed
+						if selectedIndex >= len(entries) {
+							selectedIndex = len(entries) - 1
+						}
+					}
+					showCreateName = false
+					continue
+				} else if b[0] == 127 || b[0] == 8 { // Backspace
+					if len(createInputName) > 0 {
+						createInputName = createInputName[:len(createInputName)-1]
+					}
+					continue
+				} else if b[0] >= 32 && b[0] <= 126 {
+					createInputName += string(b[0])
+					continue
+				}
+			}
+
+			if b[0] == 'n' || b[0] == 'N' {
+				showCreateType = true
+				createTypeSelected = 0
+				continue
+			}
+
 			if b[0] == '\t' {
 				focusList = !focusList
 			}
 			if b[0] == '\r' || b[0] == '\n' {
 				// Open editor
-				if entries[selectedIndex].IsFile {
+				if len(entries) > 0 && entries[selectedIndex].IsFile {
 					term.Restore(int(os.Stdin.Fd()), oldState)
 					fmt.Print(showCursor + exitAltScreen)
 
@@ -608,38 +808,50 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					fmt.Print(enterAltScreen + hideCursor)
 				}
 			}
-		} else if !showHelp && n >= 3 && b[0] == 27 && b[1] == 91 {
-			if focusList {
+		} else if n >= 3 && b[0] == 27 && b[1] == 91 {
+			if showCreateType {
 				switch b[2] {
 				case 65: // Up
-					if selectedIndex > 0 {
-						selectedIndex--
-						previewOffset = 0
-					}
+					createTypeSelected = 0
 				case 66: // Down
-					if selectedIndex < len(entries)-1 {
-						selectedIndex++
-						previewOffset = 0
-					}
+					createTypeSelected = 1
 				}
-			} else {
-				// Preview focus navigation
-				switch b[2] {
-				case 65: // Up
-					if previewOffset > 0 {
-						previewOffset--
+				continue
+			}
+
+			if !showHelp && !showCreateName {
+				if focusList {
+					switch b[2] {
+					case 65: // Up
+						if selectedIndex > 0 {
+							selectedIndex--
+							previewOffset = 0
+						}
+					case 66: // Down
+						if selectedIndex < len(entries)-1 {
+							selectedIndex++
+							previewOffset = 0
+						}
 					}
-				case 66: // Down
-					if previewOffset < len(allPreviewLines)-contentHeight {
-						previewOffset++
-					}
-				case 53: // PgUp (ESC [ 5 ~)
-					if n >= 4 && b[3] == 126 {
-						previewOffset -= contentHeight
-					}
-				case 54: // PgDn (ESC [ 6 ~)
-					if n >= 4 && b[3] == 126 {
-						previewOffset += contentHeight
+				} else {
+					// Preview focus navigation
+					switch b[2] {
+					case 65: // Up
+						if previewOffset > 0 {
+							previewOffset--
+						}
+					case 66: // Down
+						if previewOffset < len(allPreviewLines)-contentHeight {
+							previewOffset++
+						}
+					case 53: // PgUp (ESC [ 5 ~)
+						if n >= 4 && b[3] == 126 {
+							previewOffset -= contentHeight
+						}
+					case 54: // PgDn (ESC [ 6 ~)
+						if n >= 4 && b[3] == 126 {
+							previewOffset += contentHeight
+						}
 					}
 				}
 			}
@@ -649,7 +861,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 	return nil
 }
 
-func getFilePreview(path string, width int) []string {
+func GetFilePreview(path string, width int) []string {
 	file, err := os.Open(path)
 	if err != nil {
 		return []string{"Error opening file"}
