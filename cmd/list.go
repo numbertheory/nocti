@@ -227,6 +227,57 @@ func findEnclosingResource() (string, string, error) {
 	return "", "", fmt.Errorf(".nocti.json not found in parents")
 }
 
+func getFGColorCode(colorName string, defaultCode string) string {
+	colors := map[string]string{
+		"black":         "\033[38;5;0m",
+		"red":           "\033[38;5;1m",
+		"green":         "\033[38;5;2m",
+		"yellow":        "\033[38;5;3m",
+		"blue":          "\033[38;5;4m",
+		"magenta":       "\033[38;5;5m",
+		"cyan":          "\033[38;5;6m",
+		"white":         "\033[38;5;7m",
+		"gray":          "\033[38;5;244m",
+		"darkgray":      "\033[38;5;236m",
+		"lightgray":     "\033[38;5;250m",
+		"silver":        "\033[38;5;7m",
+		"brightred":     "\033[38;5;9m",
+		"brightgreen":   "\033[38;5;10m",
+		"brightyellow":  "\033[38;5;11m",
+		"brightblue":    "\033[38;5;12m",
+		"brightmagenta": "\033[38;5;13m",
+		"brightcyan":    "\033[38;5;14m",
+		"brightwhite":   "\033[38;5;15m",
+		"orange":        "\033[38;5;208m",
+		"darkorange":    "\033[38;5;166m",
+		"pink":          "\033[38;5;205m",
+		"hotpink":       "\033[38;5;198m",
+		"purple":        "\033[38;5;93m",
+		"violet":        "\033[38;5;129m",
+		"brown":         "\033[38;5;94m",
+		"navy":          "\033[38;5;18m",
+		"teal":          "\033[38;5;30m",
+		"olive":         "\033[38;5;58m",
+		"maroon":        "\033[38;5;88m",
+		"aqua":          "\033[38;5;51m",
+		"fuchsia":       "\033[38;5;201m",
+		"lime":          "\033[38;5;46m",
+		"skyblue":       "\033[38;5;117m",
+		"gold":          "\033[38;5;214m",
+		"indigo":        "\033[38;5;54m",
+		"coral":         "\033[38;5;209m",
+		"turquoise":     "\033[38;5;45m",
+		"plum":          "\033[38;5;96m",
+		"orchid":        "\033[38;5;170m",
+		"salmon":        "\033[38;5;210m",
+	}
+
+	if code, ok := colors[strings.ToLower(colorName)]; ok {
+		return code
+	}
+	return defaultCode
+}
+
 func getColorCode(colorName string, defaultCode string) string {
 	colors := map[string]string{
 		"black":         "\033[48;5;0m",
@@ -298,6 +349,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 	selectedIndex := 0
 	previewOffset := 0
 	focusList := true // true = List, false = Preview
+	showHelp := false
 
 	// ANSI escape codes
 	const (
@@ -330,7 +382,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			return err
 		}
 
-		fmt.Print(clearScreen + cursorHome)
+		fmt.Print(reset + clearScreen + cursorHome)
 
 		// Layout Constants
 		headerHeight := 1
@@ -454,8 +506,64 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			}
 		}
 
-		// 5. Status bar
-		fmt.Printf("\033[%d;1H%s ENTER to edit | TAB to switch focus | Arrows to navigate | q to exit %s", height, reverseOn, reverseOff)
+		// 5. Help Modal
+		if showHelp {
+			modalWidth := 50
+			modalHeight := 13 // Increased by 1 row
+			if width < modalWidth {
+				modalWidth = width - 4
+			}
+			startX := (width - modalWidth) / 2
+			startY := (height - modalHeight) / 2
+
+			// Resolve colors
+			hBg := "\033[48;5;236m"
+			hFg := reset
+			hbBg := reset
+			hbFg := "\033[38;5;244m"
+
+			if colors != nil {
+				hBg = getColorCode(colors.HelpBg, hBg)
+				hFg = getFGColorCode(colors.HelpFg, hFg)
+				hbBg = getColorCode(colors.HelpBorderBg, hbBg)
+				hbFg = getFGColorCode(colors.HelpBorderFg, hbFg)
+			}
+
+			// Draw modal box background
+			for i := 0; i < modalHeight; i++ {
+				fmt.Printf("\033[%d;%dH%s%s%*s%s", startY+i, startX, hBg, hFg, modalWidth, "", reset)
+			}
+
+			// Draw Border
+			fmt.Printf("\033[%d;%dH%s%s┌%s┐%s", startY, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+			for i := 1; i < modalHeight-1; i++ {
+				fmt.Printf("\033[%d;%dH%s%s│\033[%d;%dH%s%s│%s", startY+i, startX, hbBg, hbFg, startY+i, startX+modalWidth-1, hbBg, hbFg, reset)
+			}
+			fmt.Printf("\033[%d;%dH%s%s└%s┘%s", startY+modalHeight-1, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+
+			// Content
+			fmt.Printf("\033[%d;%dH%s%s%s HELP %s", startY+1, startX+(modalWidth-6)/2, hBg, hFg, boldOn+reverseOn, reset)
+
+			helpLines := []string{
+				"  Navigation:",
+				"    ↑ / ↓      : Navigate List / Preview",
+				"    TAB        : Switch Focus",
+				"    PgUp/PgDn  : Page Preview",
+				"",
+				"  Actions:",
+				"    ENTER      : Edit File",
+				"    q          : Quit",
+				"    ESC        : Close Help",
+			}
+
+			for i, line := range helpLines {
+				fmt.Printf("\033[%d;%dH%s%s%s", startY+3+i, startX+2, hBg, hFg, line)
+			}
+			fmt.Print(reset)
+		}
+
+		// 6. Status bar
+		fmt.Printf("\033[%d;1H%s%s Ctrl+H - help %s", height, reset, reverseOn, reverseOff)
 
 		// Input handling
 		b := make([]byte, 8)
@@ -467,6 +575,17 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		if n == 1 {
 			if b[0] == 'q' || b[0] == 'Q' || b[0] == 3 {
 				break
+			}
+			if b[0] == 8 { // Ctrl+H
+				showHelp = true
+				continue
+			}
+			if b[0] == 27 { // ESC
+				showHelp = false
+				continue
+			}
+			if showHelp {
+				continue
 			}
 			if b[0] == '\t' {
 				focusList = !focusList
@@ -489,7 +608,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					fmt.Print(enterAltScreen + hideCursor)
 				}
 			}
-		} else if n >= 3 && b[0] == 27 && b[1] == 91 {
+		} else if !showHelp && n >= 3 && b[0] == 27 && b[1] == 91 {
 			if focusList {
 				switch b[2] {
 				case 65: // Up

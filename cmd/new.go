@@ -37,8 +37,12 @@ type Todo Resource
 type Calendar Resource
 
 type ColorsConfig struct {
-	FileList    string `json:"file_list,omitempty"`
-	PreviewPane string `json:"preview_pane,omitempty"`
+	FileList     string `json:"file_list,omitempty"`
+	PreviewPane  string `json:"preview_pane,omitempty"`
+	HelpBg       string `json:"help_bg,omitempty"`
+	HelpFg       string `json:"help_fg,omitempty"`
+	HelpBorderBg string `json:"help_border_bg,omitempty"`
+	HelpBorderFg string `json:"help_border_fg,omitempty"`
 }
 
 // FullConfig to include all resource types
@@ -279,6 +283,18 @@ func CreateResource(resourceType string) error {
 		"created_at": res.CreatedAt,
 		"editor":     editor,
 	}
+
+	if resourceType == "notebook" {
+		resInfo["colors"] = &ColorsConfig{
+			FileList:     "blue",
+			PreviewPane:  "orange",
+			HelpBg:       "darkgray",
+			HelpFg:       "white",
+			HelpBorderBg: "black",
+			HelpBorderFg: "gray",
+		}
+	}
+
 	if res.Parent != nil {
 		resInfo["parent"] = map[string]string{
 			"id":   res.Parent.ID,

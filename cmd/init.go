@@ -9,9 +9,10 @@ import (
 )
 
 type Config struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	Editor  string `json:"editor"`
+	Name    string        `json:"name"`
+	Version string        `json:"version"`
+	Editor  string        `json:"editor"`
+	Colors  *ColorsConfig `json:"colors,omitempty"`
 }
 
 var ProjectName string
@@ -56,6 +57,14 @@ var InitCmd = &cobra.Command{
 			Name:    ProjectName,
 			Version: Version,
 			Editor:  "nano",
+			Colors: &ColorsConfig{
+				FileList:     "blue",
+				PreviewPane:  "orange",
+				HelpBg:       "darkgray",
+				HelpFg:       "white",
+				HelpBorderBg: "black",
+				HelpBorderFg: "gray",
+			},
 		}
 
 		data, err := json.MarshalIndent(config, "", "  ")
