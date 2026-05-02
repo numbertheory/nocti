@@ -6,6 +6,12 @@ TARGET_BINARY=$(BUILD_DIR)/$(BINARY_NAME)
 VERSION=$(shell git describe --tags --always 2>/dev/null || echo "development")
 LD_FLAGS="-X nocti/cmd.Version=$(VERSION)"
 
+# Colors
+RED=\033[0;31m
+GREEN=\033[0;32m
+BLUE=\033[0;34m
+NC=\033[0m # No Color
+
 .PHONY: all build install clean test coverage help
 
 all: build
@@ -17,8 +23,10 @@ build:
 
 test:
 	@echo "Running tests with coverage..."
-	go test -v -coverprofile=coverage.out -coverpkg=nocti/cmd ./tests/...
-	go tool cover -func=coverage.out
+	@go test -v -coverprofile=coverage.out -coverpkg=nocti/cmd ./tests/... | sed -e 's/PASS/$(shell printf "$(GREEN)PASS$(NC)")/g' -e 's/FAIL/$(shell printf "$(RED)FAIL$(NC)")/g'
+	@printf "$(BLUE)"
+	@go tool cover -func=coverage.out
+	@printf "$(NC)"
 	@rm coverage.out
 
 coverage:
