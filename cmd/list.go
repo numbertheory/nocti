@@ -449,6 +449,10 @@ func GetColorCode(colorName string, defaultCode string) string {
 }
 
 func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsConfig, editorCmd string, isProjectRoot bool) error {
+	// Track initial state for "back to root" functionality
+	initialDir := baseDir
+	initialIsRoot := isProjectRoot
+
 	// Check if stdout is a terminal
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		for _, e := range entries {
@@ -814,10 +818,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 		// 8. Status bar
 		helpShortcut := ""
+		backShortcut := ""
 		if isProjectRoot {
 			helpShortcut = ""
+		} else if initialIsRoot {
+			backShortcut = ""
 		}
-		fmt.Printf("\033[%d;1H%s%s %sCtrl+H - help %s", height, reset, reverseOn, helpShortcut, reverseOff)
+		fmt.Printf("\033[%d;1H%s%s %s%sCtrl+H - help %s", height, reset, reverseOn, backShortcut, helpShortcut, reverseOff)
 
 		// Input handling
 		b := make([]byte, 8)
@@ -828,6 +835,18 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 		if n == 1 {
 			if b[0] == 'q' || b[0] == 'Q' || b[0] == 3 {
+				if !isProjectRoot && initialIsRoot {
+					// Return to project root
+					isProjectRoot = true
+					baseDir = initialDir
+					files, _ := ScanProjectResources(baseDir)
+					entries = BuildDisplayEntries(files)
+					colors, editorCmd = loadColorsAndEditor(baseDir)
+					selectedIndex = 0
+					previewOffset = 0
+					focusList = true
+					continue
+				}
 				break
 			}
 			if b[0] == 8 { // Ctrl+H
@@ -835,11 +854,27 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				continue
 			}
 			if b[0] == 27 { // ESC
-				showHelp = false
-				showCreateType = false
-				showCreateName = false
-				continue
+				if showHelp || showCreateType || showCreateName {
+					showHelp = false
+					showCreateType = false
+					showCreateName = false
+					continue
+				}
+				if !isProjectRoot && initialIsRoot {
+					// Return to project root
+					isProjectRoot = true
+					baseDir = initialDir
+					files, _ := ScanProjectResources(baseDir)
+					entries = BuildDisplayEntries(files)
+					colors, editorCmd = loadColorsAndEditor(baseDir)
+					selectedIndex = 0
+					previewOffset = 0
+					focusList = true
+					continue
+				}
+				break
 			}
+
 			if showHelp {
 				continue
 			}
