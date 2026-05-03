@@ -49,6 +49,8 @@ func TestScanNotebookFiles(t *testing.T) {
 
 	os.WriteFile(filepath.Join(tmpDir, "note1.md"), []byte(""), 0644)
 	os.Mkdir(filepath.Join(tmpDir, "empty-dir"), 0755)
+	os.Chdir(tmpDir) // WalkDir behavior might depend on path relative to searchDir
+
 	os.Mkdir(filepath.Join(tmpDir, "dir-with-txt"), 0755)
 	os.WriteFile(filepath.Join(tmpDir, "dir-with-txt", "note2.txt"), []byte(""), 0644)
 	os.Mkdir(filepath.Join(tmpDir, "dir-with-other"), 0755)
@@ -56,8 +58,15 @@ func TestScanNotebookFiles(t *testing.T) {
 	os.Mkdir(filepath.Join(tmpDir, "sub-resource"), 0755)
 	os.WriteFile(filepath.Join(tmpDir, "sub-resource", ".nocti.json"), []byte("{}"), 0644)
 	os.WriteFile(filepath.Join(tmpDir, "sub-resource", "hidden.md"), []byte(""), 0644)
+	os.Mkdir(filepath.Join(tmpDir, ".hidden-dir"), 0755)
+	os.WriteFile(filepath.Join(tmpDir, ".hidden-dir", "secret.md"), []byte(""), 0644)
 
-	files, err := cmd.ScanNotebookFiles(tmpDir)
+	// Settings and templates
+	os.WriteFile(filepath.Join(tmpDir, ".nocti.json"), []byte("{}"), 0644)
+	os.Mkdir(filepath.Join(tmpDir, ".templates"), 0755)
+	os.WriteFile(filepath.Join(tmpDir, ".templates", "template.md"), []byte(""), 0644)
+
+	files, err := cmd.ScanNotebookFiles(tmpDir, false)
 	if err != nil {
 		t.Fatalf("ScanNotebookFiles failed: %v", err)
 	}
@@ -67,6 +76,9 @@ func TestScanNotebookFiles(t *testing.T) {
 	foundNote2 := false
 	foundOtherDir := false
 	foundSubResource := false
+	foundHiddenDir := false
+	foundSettings := false
+	foundTemplate := false
 
 	for _, f := range files {
 		if f == "note1.md" {
@@ -79,6 +91,12 @@ func TestScanNotebookFiles(t *testing.T) {
 			foundOtherDir = true
 		} else if strings.Contains(f, "sub-resource") {
 			foundSubResource = true
+		} else if strings.Contains(f, ".hidden-dir") {
+			foundHiddenDir = true
+		} else if f == ".nocti.json" {
+			foundSettings = true
+		} else if strings.Contains(f, ".templates") {
+			foundTemplate = true
 		}
 	}
 
@@ -96,6 +114,41 @@ func TestScanNotebookFiles(t *testing.T) {
 	}
 	if foundSubResource {
 		t.Error("sub-resource should have been ignored")
+	}
+	if foundHiddenDir {
+		t.Error(".hidden-dir should have been ignored")
+	}
+	if foundSettings {
+		t.Error(".nocti.json should have been hidden")
+	}
+	if foundTemplate {
+		t.Error(".templates should have been hidden")
+	}
+
+	// Test with showHidden = true
+	filesHidden, _ := cmd.ScanNotebookFiles(tmpDir, true)
+	foundSettingsHidden := false
+	foundTemplateHidden := false
+	foundHiddenDirStillHidden := false
+
+	for _, f := range filesHidden {
+		if f == ".nocti.json" {
+			foundSettingsHidden = true
+		} else if f == ".templates/template.md" || f == ".templates\\template.md" {
+			foundTemplateHidden = true
+		} else if strings.Contains(f, ".hidden-dir") {
+			foundHiddenDirStillHidden = true
+		}
+	}
+
+	if !foundSettingsHidden {
+		t.Error(".nocti.json should be visible when showHidden is true")
+	}
+	if !foundTemplateHidden {
+		t.Error(".templates/template.md should be visible when showHidden is true")
+	}
+	if foundHiddenDirStillHidden {
+		t.Error(".hidden-dir should still be ignored even when showHidden is true")
 	}
 }
 

@@ -94,7 +94,7 @@ func BuildDisplayEntries(files []string) []DisplayEntry {
 	return entries
 }
 
-func ScanNotebookFiles(searchDir string) ([]string, error) {
+func ScanNotebookFiles(searchDir string, showHidden bool) ([]string, error) {
 	var results []string
 	// Map to track folders that contain relevant files or are empty
 	// but we'll use a more direct approach by walking twice or tracking.
@@ -111,17 +111,30 @@ func ScanNotebookFiles(searchDir string) ([]string, error) {
 		}
 
 		if d.IsDir() {
-			if d.Name() == ".git" {
-				return filepath.SkipDir
+			if strings.HasPrefix(d.Name(), ".") {
+				if !showHidden || d.Name() != ".templates" {
+					return filepath.SkipDir
+				}
 			}
 			if _, err := os.Stat(filepath.Join(path, ".nocti.json")); err == nil {
-				return filepath.SkipDir
+				// We don't skip the notebook itself, but we skip sub-resources
+				if path != searchDir {
+					return filepath.SkipDir
+				}
 			}
 
 			// Check if folder is empty
 			entries, err := os.ReadDir(path)
 			if err == nil && len(entries) == 0 {
 				validDirs[path] = true
+			}
+			return nil
+		}
+
+		if showHidden && d.Name() == ".nocti.json" {
+			relPath, err := filepath.Rel(searchDir, path)
+			if err == nil {
+				results = append(results, relPath)
 			}
 			return nil
 		}
@@ -278,7 +291,7 @@ var ListCmd = &cobra.Command{
 		if isProjectRoot {
 			files, err = ScanProjectResources(searchDir)
 		} else {
-			files, err = ScanNotebookFiles(searchDir)
+			files, err = ScanNotebookFiles(searchDir, false)
 		}
 		if err != nil {
 			return err
@@ -452,6 +465,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 	// Track initial state for "back to root" functionality
 	initialDir := baseDir
 	initialIsRoot := isProjectRoot
+	showHidden := false
 
 	// Check if stdout is a terminal
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
@@ -563,6 +577,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				if !isProjectRoot && entry.IsFile {
 					if strings.HasSuffix(strings.ToLower(entry.Name), ".md") {
 						icon = iconMarkdown
+					} else if entry.Name == ".nocti.json" {
+						icon = " " // Gear icon for settings
 					} else {
 						icon = iconText
 					}
@@ -612,8 +628,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					allPreviewLines = append(allPreviewLines, "")
 
 					if config.Type == "notebook" {
-						files, _ := ScanNotebookFiles(filepath.Join(baseDir, selected.RelPath))
+						files, _ := ScanNotebookFiles(filepath.Join(baseDir, selected.RelPath), false)
 						allPreviewLines = append(allPreviewLines, fmt.Sprintf("Notes:    %d", len(files)))
+
 					} else {
 						allPreviewLines = append(allPreviewLines, "[ Not yet implemented ]")
 					}
@@ -674,7 +691,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		// 5. Help Modal
 		if showHelp {
 			modalWidth := 50
-			modalHeight := 14 // Increased for equal top/bottom buffer
+			modalHeight := 16 // Increased for equal top/bottom buffer
 			if width < modalWidth {
 				modalWidth = width - 4
 			}
@@ -717,6 +734,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				"",
 				"  Actions:",
 				"    n          : New File/Folder",
+				"    Ctrl+T     : Toggle Settings/Templates",
 				"    ENTER      : Edit File",
 				"    q          : Quit",
 				"    ESC        : Close Help",
@@ -817,14 +835,16 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		}
 
 		// 8. Status bar
-		helpShortcut := ""
+		helpShortcut := "n - new | "
 		backShortcut := ""
+		toggleShortcut := "Ctrl+T - settings | "
 		if isProjectRoot {
 			helpShortcut = ""
+			toggleShortcut = ""
 		} else if initialIsRoot {
-			backShortcut = ""
+			backShortcut = "q/ESC - back | "
 		}
-		fmt.Printf("\033[%d;1H%s%s %s%sCtrl+H - help %s", height, reset, reverseOn, backShortcut, helpShortcut, reverseOff)
+		fmt.Printf("\033[%d;1H%s%s %s%s%sCtrl+H - help %s", height, reset, reverseOn, backShortcut, toggleShortcut, helpShortcut, reverseOff)
 
 		// Input handling
 		b := make([]byte, 8)
@@ -834,7 +854,22 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		}
 
 		if n == 1 {
+			if b[0] == 20 { // Ctrl+T
+				if !isProjectRoot {
+					showHidden = !showHidden
+					files, _ := ScanNotebookFiles(baseDir, showHidden)
+					entries = BuildDisplayEntries(files)
+					if selectedIndex >= len(entries) {
+						selectedIndex = len(entries) - 1
+					}
+					if selectedIndex < 0 {
+						selectedIndex = 0
+					}
+				}
+				continue
+			}
 			if b[0] == 'q' || b[0] == 'Q' || b[0] == 3 {
+
 				if !isProjectRoot && initialIsRoot {
 					// Return to project root
 					isProjectRoot = true
@@ -915,7 +950,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						}
 
 						// Refresh
-						files, _ := ScanNotebookFiles(baseDir)
+						files, _ := ScanNotebookFiles(baseDir, showHidden)
 						entries = BuildDisplayEntries(files)
 						// Reset selection to something reasonable if it changed
 						if selectedIndex >= len(entries) {
@@ -960,7 +995,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						if config.Type == "notebook" {
 							// Jump to notebook
 							newBaseDir := filepath.Join(baseDir, selected.RelPath)
-							newFiles, _ := ScanNotebookFiles(newBaseDir)
+							showHidden = false // Reset hidden toggle when switching notebooks
+							newFiles, _ := ScanNotebookFiles(newBaseDir, showHidden)
 							newEntries := BuildDisplayEntries(newFiles)
 
 							// Refresh colors and editor for the new notebook
