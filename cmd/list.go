@@ -176,6 +176,51 @@ func ScanNotebookFiles(searchDir string) ([]string, error) {
 	return results, nil
 }
 
+func loadColorsAndEditor(searchDir string) (*ColorsConfig, string) {
+	var colors *ColorsConfig
+	var editorCmd string
+
+	// Read colors and editor: check local .nocti.json first, then fallback to main config
+	localConfigFile := filepath.Join(searchDir, ".nocti.json")
+	if data, err := os.ReadFile(localConfigFile); err == nil {
+		var config struct {
+			Colors *ColorsConfig `json:"colors"`
+			Editor string        `json:"editor"`
+		}
+		if err := json.Unmarshal(data, &config); err == nil {
+			if config.Colors != nil {
+				colors = config.Colors
+			}
+			if config.Editor != "" {
+				editorCmd = config.Editor
+			}
+		}
+	}
+
+	if colors == nil || editorCmd == "" {
+		if root, err := FindProjectRoot(); err == nil {
+			configFile := filepath.Join(root, ".nocti/nocti.json")
+			if data, err := os.ReadFile(configFile); err == nil {
+				var config FullConfig
+				if err := json.Unmarshal(data, &config); err == nil {
+					if colors == nil {
+						colors = config.Colors
+					}
+					if editorCmd == "" {
+						editorCmd = config.Editor
+					}
+				}
+			}
+		}
+	}
+
+	if editorCmd == "" {
+		editorCmd = "nvim"
+	}
+
+	return colors, editorCmd
+}
+
 var ListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List files in a notebook resource",
@@ -246,7 +291,7 @@ var ListCmd = &cobra.Command{
 			return nil
 		}
 
-		if len(files) == 0 {
+		if len(files) == 0 && !term.IsTerminal(int(os.Stdout.Fd())) {
 			if isProjectRoot {
 				fmt.Println("No resources found in project root.")
 			} else {
@@ -255,45 +300,11 @@ var ListCmd = &cobra.Command{
 			return nil
 		}
 
-		// Read colors and editor: check local .nocti.json first, then fallback to main config
-		var colors *ColorsConfig
-		var editorCmd string
-		localConfigFile := filepath.Join(searchDir, ".nocti.json")
-		if data, err := os.ReadFile(localConfigFile); err == nil {
-			var config struct {
-				Colors *ColorsConfig `json:"colors"`
-				Editor string        `json:"editor"`
-			}
-			if err := json.Unmarshal(data, &config); err == nil {
-				if config.Colors != nil {
-					colors = config.Colors
-				}
-				if config.Editor != "" {
-					editorCmd = config.Editor
-				}
-			}
+		if len(files) == 0 && RawOutput {
+			return nil
 		}
 
-		if colors == nil || editorCmd == "" {
-			if root, err := FindProjectRoot(); err == nil {
-				configFile := filepath.Join(root, ".nocti/nocti.json")
-				if data, err := os.ReadFile(configFile); err == nil {
-					var config FullConfig
-					if err := json.Unmarshal(data, &config); err == nil {
-						if colors == nil {
-							colors = config.Colors
-						}
-						if editorCmd == "" {
-							editorCmd = config.Editor
-						}
-					}
-				}
-			}
-		}
-
-		if editorCmd == "" {
-			editorCmd = "nvim"
-		}
+		colors, editorCmd := loadColorsAndEditor(searchDir)
 
 		entries := BuildDisplayEntries(files)
 		return runInteractiveList(entries, searchDir, colors, editorCmd, isProjectRoot)
@@ -578,36 +589,44 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 		// 3. Preview Content
 		var allPreviewLines []string
-		selected := entries[selectedIndex]
-		if isProjectRoot {
-			resConfigPath := filepath.Join(baseDir, selected.RelPath, ".nocti.json")
-			data, err := os.ReadFile(resConfigPath)
-			if err == nil {
-				var config struct {
-					ID   string `json:"id"`
-					Name string `json:"name"`
-					Type string `json:"type"`
-				}
-				json.Unmarshal(data, &config)
+		if len(entries) > 0 {
+			selected := entries[selectedIndex]
+			if isProjectRoot {
+				resConfigPath := filepath.Join(baseDir, selected.RelPath, ".nocti.json")
+				data, err := os.ReadFile(resConfigPath)
+				if err == nil {
+					var config struct {
+						ID   string `json:"id"`
+						Name string `json:"name"`
+						Type string `json:"type"`
+					}
+					json.Unmarshal(data, &config)
 
-				allPreviewLines = append(allPreviewLines, "Resource: "+config.Name)
-				allPreviewLines = append(allPreviewLines, "Type:     "+config.Type)
-				allPreviewLines = append(allPreviewLines, "ID:       "+config.ID)
-				allPreviewLines = append(allPreviewLines, "")
+					allPreviewLines = append(allPreviewLines, "Resource: "+config.Name)
+					allPreviewLines = append(allPreviewLines, "Type:     "+config.Type)
+					allPreviewLines = append(allPreviewLines, "ID:       "+config.ID)
+					allPreviewLines = append(allPreviewLines, "")
 
-				if config.Type == "notebook" {
-					files, _ := ScanNotebookFiles(filepath.Join(baseDir, selected.RelPath))
-					allPreviewLines = append(allPreviewLines, fmt.Sprintf("Notes:    %d", len(files)))
+					if config.Type == "notebook" {
+						files, _ := ScanNotebookFiles(filepath.Join(baseDir, selected.RelPath))
+						allPreviewLines = append(allPreviewLines, fmt.Sprintf("Notes:    %d", len(files)))
+					} else {
+						allPreviewLines = append(allPreviewLines, "[ Not yet implemented ]")
+					}
 				} else {
-					allPreviewLines = append(allPreviewLines, "[ Not yet implemented ]")
+					allPreviewLines = []string{"Error reading resource config"}
 				}
+			} else if selected.IsFile {
+				allPreviewLines = GetFilePreview(filepath.Join(baseDir, selected.RelPath), previewWidth)
 			} else {
-				allPreviewLines = []string{"Error reading resource config"}
+				allPreviewLines = []string{"Directory: " + selected.RelPath}
 			}
-		} else if selected.IsFile {
-			allPreviewLines = GetFilePreview(filepath.Join(baseDir, selected.RelPath), previewWidth)
 		} else {
-			allPreviewLines = []string{"Directory: " + selected.RelPath}
+			if isProjectRoot {
+				allPreviewLines = []string{"No resources found in project root."}
+			} else {
+				allPreviewLines = []string{"No markdown or text files found.", "", "Press 'n' to create a new file."}
+			}
 		}
 
 		// Bound check previewOffset
@@ -658,11 +677,11 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			startX := (width - modalWidth) / 2
 			startY := (height - modalHeight) / 2
 
-			// Resolve colors
-			hBg := "\033[48;5;236m"
-			hFg := reset
-			hbBg := reset
-			hbFg := "\033[38;5;244m"
+			// Resolve colors with specific defaults
+			hBg := "\033[44m"       // Default Blue
+			hFg := "\033[38;5;15m"  // Default White
+			hbBg := "\033[44m"      // Default Blue
+			hbFg := "\033[38;5;15m" // Default White
 
 			if colors != nil {
 				hBg = GetColorCode(colors.HelpBg, hBg)
@@ -712,25 +731,40 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			startX := (width - modalWidth) / 2
 			startY := (height - modalHeight) / 2
 
-			hBg := "\033[48;5;236m"
-			hFg := reset
+			// Resolve colors with specific defaults
+			hBg := "\033[44m"       // Default Blue
+			hFg := "\033[38;5;15m"  // Default White
+			hbBg := "\033[44m"      // Default Blue
+			hbFg := "\033[38;5;15m" // Default White
+
 			if colors != nil {
 				hBg = GetColorCode(colors.HelpBg, hBg)
 				hFg = GetFGColorCode(colors.HelpFg, hFg)
+				hbBg = GetColorCode(colors.HelpBorderBg, hbBg)
+				hbFg = GetFGColorCode(colors.HelpBorderFg, hbFg)
 			}
 
+			// Draw modal box background
 			for i := 0; i < modalHeight; i++ {
 				fmt.Printf("\033[%d;%dH%s%s%*s%s", startY+i, startX, hBg, hFg, modalWidth, "", reset)
 			}
+
+			// Draw Border
+			fmt.Printf("\033[%d;%dH%s%s┌%s┐%s", startY, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+			for i := 1; i < modalHeight-1; i++ {
+				fmt.Printf("\033[%d;%dH%s%s│\033[%d;%dH%s%s│%s", startY+i, startX, hbBg, hbFg, startY+i, startX+modalWidth-1, hbBg, hbFg, reset)
+			}
+			fmt.Printf("\033[%d;%dH%s%s└%s┘%s", startY+modalHeight-1, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+
 			fmt.Printf("\033[%d;%dH%s%s CREATE NEW %s", startY+1, startX+(modalWidth-12)/2, hBg, hFg+boldOn, reset)
 
 			options := []string{" File ", " Folder "}
 			for i, opt := range options {
 				fmt.Printf("\033[%d;%dH", startY+3+i, startX+14)
 				if i == createTypeSelected {
-					fmt.Printf("%s%s%s", reverseOn, opt, reverseOff)
+					fmt.Printf("%s%s%s", hBg+hFg+reverseOn, opt, reset+hBg+hFg)
 				} else {
-					fmt.Print(opt)
+					fmt.Printf("%s%s%s", hBg, hFg+opt, reset)
 				}
 			}
 			fmt.Printf("\033[%d;%dH%s%s ↑/↓ to select | ENTER to confirm %s", startY+6, startX+(modalWidth-32)/2, hBg, hFg, reset)
@@ -743,28 +777,43 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			startX := (width - modalWidth) / 2
 			startY := (height - modalHeight) / 2
 
-			hBg := "\033[48;5;236m"
-			hFg := reset
+			// Resolve colors with specific defaults
+			hBg := "\033[44m"       // Default Blue
+			hFg := "\033[38;5;15m"  // Default White
+			hbBg := "\033[44m"      // Default Blue
+			hbFg := "\033[38;5;15m" // Default White
+
 			if colors != nil {
 				hBg = GetColorCode(colors.HelpBg, hBg)
 				hFg = GetFGColorCode(colors.HelpFg, hFg)
+				hbBg = GetColorCode(colors.HelpBorderBg, hbBg)
+				hbFg = GetFGColorCode(colors.HelpBorderFg, hbFg)
 			}
 
+			// Draw modal box background
 			for i := 0; i < modalHeight; i++ {
 				fmt.Printf("\033[%d;%dH%s%s%*s%s", startY+i, startX, hBg, hFg, modalWidth, "", reset)
 			}
+
+			// Draw Border
+			fmt.Printf("\033[%d;%dH%s%s┌%s┐%s", startY, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+			for i := 1; i < modalHeight-1; i++ {
+				fmt.Printf("\033[%d;%dH%s%s│\033[%d;%dH%s%s│%s", startY+i, startX, hbBg, hbFg, startY+i, startX+modalWidth-1, hbBg, hbFg, reset)
+			}
+			fmt.Printf("\033[%d;%dH%s%s└%s┘%s", startY+modalHeight-1, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+
 			typeStr := "FILE"
 			if createTypeSelected == 1 {
 				typeStr = "FOLDER"
 			}
 			fmt.Printf("\033[%d;%dH%s%s NEW %s NAME %s", startY+1, startX+(modalWidth-len(typeStr)-10)/2, hBg, hFg+boldOn, typeStr, reset)
 
-			fmt.Printf("\033[%d;%dH%s%s > %s%s%s", startY+3, startX+4, hBg, hFg, reverseOn, createInputName, reverseOff)
+			fmt.Printf("\033[%d;%dH%s%s > %s%s%s", startY+3, startX+4, hBg, hFg, reverseOn, createInputName, reset+hBg+hFg)
 			fmt.Printf("\033[%d;%dH%s%s ENTER to create | ESC to cancel %s", startY+6, startX+(modalWidth-28)/2, hBg, hFg, reset)
 		}
 
 		// 8. Status bar
-		helpShortcut := "n - new | "
+		helpShortcut := ""
 		if isProjectRoot {
 			helpShortcut = ""
 		}
@@ -837,6 +886,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						if selectedIndex >= len(entries) {
 							selectedIndex = len(entries) - 1
 						}
+						if selectedIndex < 0 {
+							selectedIndex = 0
+						}
 					}
 					showCreateName = false
 					continue
@@ -861,7 +913,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				focusList = !focusList
 			}
 			if b[0] == '\r' || b[0] == '\n' {
-				if isProjectRoot {
+				if isProjectRoot && len(entries) > 0 {
 					selected := entries[selectedIndex]
 					resConfigPath := filepath.Join(baseDir, selected.RelPath, ".nocti.json")
 					data, err := os.ReadFile(resConfigPath)
@@ -876,6 +928,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							newFiles, _ := ScanNotebookFiles(newBaseDir)
 							newEntries := BuildDisplayEntries(newFiles)
 
+							// Refresh colors and editor for the new notebook
+							colors, editorCmd = loadColorsAndEditor(newBaseDir)
+
 							entries = newEntries
 							baseDir = newBaseDir
 							isProjectRoot = false
@@ -885,7 +940,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							continue
 						}
 					}
-				} else if len(entries) > 0 && entries[selectedIndex].IsFile {
+				} else if !isProjectRoot && len(entries) > 0 && entries[selectedIndex].IsFile {
 					term.Restore(int(os.Stdin.Fd()), oldState)
 					fmt.Print(showCursor + exitAltScreen)
 

@@ -9,6 +9,14 @@ import (
 	"testing"
 )
 
+func TestBuildDisplayEntriesEmpty(t *testing.T) {
+	files := []string{}
+	entries := cmd.BuildDisplayEntries(files)
+	if len(entries) != 0 {
+		t.Fatalf("Expected 0 entries for empty file list, got %d", len(entries))
+	}
+}
+
 func TestBuildDisplayEntries(t *testing.T) {
 	files := []string{
 		"note1.md",
