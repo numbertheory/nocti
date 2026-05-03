@@ -24,6 +24,25 @@ type DisplayEntry struct {
 	Name    string
 }
 
+func ScanProjectResources(root string) ([]string, error) {
+	var resources []string
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(root, entry.Name(), ".nocti.json")); err == nil {
+			resources = append(resources, entry.Name()+string(os.PathSeparator))
+		}
+	}
+	sort.Strings(resources)
+	return resources, nil
+}
+
 func BuildDisplayEntries(files []string) []DisplayEntry {
 	var entries []DisplayEntry
 	seenDirs := make(map[string]bool)
@@ -162,6 +181,7 @@ var ListCmd = &cobra.Command{
 	Short: "List files in a notebook resource",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var searchDir string
+		var isProjectRoot bool
 
 		if len(args) > 0 {
 			target := args[0]
@@ -188,19 +208,33 @@ var ListCmd = &cobra.Command{
 			}
 			searchDir = target
 		} else {
-			// Detect if we are inside a nocti resource and if it's a notebook
-			_, resourceType, err := FindEnclosingResource()
-			if err != nil {
-				return fmt.Errorf("not inside a nocti resource and no resource name provided: %w", err)
-			}
+			// Check if we are in the project root
+			root, err := FindProjectRoot()
+			wd, _ := os.Getwd()
+			if err == nil && wd == root {
+				isProjectRoot = true
+				searchDir = "."
+			} else {
+				// Detect if we are inside a nocti resource and if it's a notebook
+				_, resourceType, err := FindEnclosingResource()
+				if err != nil {
+					return fmt.Errorf("not inside a nocti resource and no resource name provided: %w", err)
+				}
 
-			if resourceType != "notebook" {
-				return fmt.Errorf("the 'list' command is only available inside a notebook resource (current type: %s)", resourceType)
+				if resourceType != "notebook" {
+					return fmt.Errorf("the 'list' command is only available inside a notebook resource (current type: %s)", resourceType)
+				}
+				searchDir = "."
 			}
-			searchDir = "."
 		}
 
-		files, err := ScanNotebookFiles(searchDir)
+		var files []string
+		var err error
+		if isProjectRoot {
+			files, err = ScanProjectResources(searchDir)
+		} else {
+			files, err = ScanNotebookFiles(searchDir)
+		}
 		if err != nil {
 			return err
 		}
@@ -213,7 +247,11 @@ var ListCmd = &cobra.Command{
 		}
 
 		if len(files) == 0 {
-			fmt.Println("No markdown or text files found.")
+			if isProjectRoot {
+				fmt.Println("No resources found in project root.")
+			} else {
+				fmt.Println("No markdown or text files found.")
+			}
 			return nil
 		}
 
@@ -258,7 +296,7 @@ var ListCmd = &cobra.Command{
 		}
 
 		entries := BuildDisplayEntries(files)
-		return runInteractiveList(entries, searchDir, colors, editorCmd)
+		return runInteractiveList(entries, searchDir, colors, editorCmd, isProjectRoot)
 	},
 }
 
@@ -399,7 +437,7 @@ func GetColorCode(colorName string, defaultCode string) string {
 	return defaultCode
 }
 
-func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsConfig, editorCmd string) error {
+func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsConfig, editorCmd string, isProjectRoot bool) error {
 	// Check if stdout is a terminal
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		for _, e := range entries {
@@ -481,6 +519,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 		fmt.Printf("\033[1;1H")
 		listHeader := " FILE LIST "
+		if isProjectRoot {
+			listHeader = " RESOURCES "
+		}
 		prevHeader := " PREVIEW "
 		if focusList {
 			listHeader = "[" + listHeader + "]"
@@ -504,7 +545,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				entry := entries[i]
 				indent := strings.Repeat("  ", entry.Depth)
 				icon := iconFolder
-				if entry.IsFile {
+				if !isProjectRoot && entry.IsFile {
 					if strings.HasSuffix(strings.ToLower(entry.Name), ".md") {
 						icon = iconMarkdown
 					} else {
@@ -538,7 +579,32 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		// 3. Preview Content
 		var allPreviewLines []string
 		selected := entries[selectedIndex]
-		if selected.IsFile {
+		if isProjectRoot {
+			resConfigPath := filepath.Join(baseDir, selected.RelPath, ".nocti.json")
+			data, err := os.ReadFile(resConfigPath)
+			if err == nil {
+				var config struct {
+					ID   string `json:"id"`
+					Name string `json:"name"`
+					Type string `json:"type"`
+				}
+				json.Unmarshal(data, &config)
+
+				allPreviewLines = append(allPreviewLines, "Resource: "+config.Name)
+				allPreviewLines = append(allPreviewLines, "Type:     "+config.Type)
+				allPreviewLines = append(allPreviewLines, "ID:       "+config.ID)
+				allPreviewLines = append(allPreviewLines, "")
+
+				if config.Type == "notebook" {
+					files, _ := ScanNotebookFiles(filepath.Join(baseDir, selected.RelPath))
+					allPreviewLines = append(allPreviewLines, fmt.Sprintf("Notes:    %d", len(files)))
+				} else {
+					allPreviewLines = append(allPreviewLines, "[ Not yet implemented ]")
+				}
+			} else {
+				allPreviewLines = []string{"Error reading resource config"}
+			}
+		} else if selected.IsFile {
 			allPreviewLines = GetFilePreview(filepath.Join(baseDir, selected.RelPath), previewWidth)
 		} else {
 			allPreviewLines = []string{"Directory: " + selected.RelPath}
@@ -698,7 +764,11 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		}
 
 		// 8. Status bar
-		fmt.Printf("\033[%d;1H%s%s n - new | Ctrl+H - help %s", height, reset, reverseOn, reverseOff)
+		helpShortcut := "n - new | "
+		if isProjectRoot {
+			helpShortcut = ""
+		}
+		fmt.Printf("\033[%d;1H%s%s %sCtrl+H - help %s", height, reset, reverseOn, helpShortcut, reverseOff)
 
 		// Input handling
 		b := make([]byte, 8)
@@ -781,7 +851,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				}
 			}
 
-			if b[0] == 'n' || b[0] == 'N' {
+			if !isProjectRoot && (b[0] == 'n' || b[0] == 'N') {
 				showCreateType = true
 				createTypeSelected = 0
 				continue
@@ -791,8 +861,31 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				focusList = !focusList
 			}
 			if b[0] == '\r' || b[0] == '\n' {
-				// Open editor
-				if len(entries) > 0 && entries[selectedIndex].IsFile {
+				if isProjectRoot {
+					selected := entries[selectedIndex]
+					resConfigPath := filepath.Join(baseDir, selected.RelPath, ".nocti.json")
+					data, err := os.ReadFile(resConfigPath)
+					if err == nil {
+						var config struct {
+							Type string `json:"type"`
+						}
+						json.Unmarshal(data, &config)
+						if config.Type == "notebook" {
+							// Jump to notebook
+							newBaseDir := filepath.Join(baseDir, selected.RelPath)
+							newFiles, _ := ScanNotebookFiles(newBaseDir)
+							newEntries := BuildDisplayEntries(newFiles)
+
+							entries = newEntries
+							baseDir = newBaseDir
+							isProjectRoot = false
+							selectedIndex = 0
+							previewOffset = 0
+							focusList = true
+							continue
+						}
+					}
+				} else if len(entries) > 0 && entries[selectedIndex].IsFile {
 					term.Restore(int(os.Stdin.Fd()), oldState)
 					fmt.Print(showCursor + exitAltScreen)
 

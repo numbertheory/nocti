@@ -13,13 +13,30 @@ var RootCmd = &cobra.Command{
 	Use:   "nocti",
 	Short: "Nocti Note Taking CLI",
 	Long:  `Nocti is a CLI tool for note-taking and knowledge management.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		version, _ := cmd.Flags().GetBool("version")
 		if version {
 			fmt.Printf("Nocti version %s\n", Version)
-			return
+			return nil
 		}
-		cmd.Help()
+
+		// Default to 'list' command if no args provided
+		if len(args) == 0 {
+			// Check if we are in the project root
+			root, err := FindProjectRoot()
+			wd, _ := os.Getwd()
+			if err == nil && wd == root {
+				return ListCmd.RunE(ListCmd, args)
+			}
+
+			// Check if we are in a notebook context
+			_, resType, err := FindEnclosingResource()
+			if err == nil && resType == "notebook" {
+				return ListCmd.RunE(ListCmd, args)
+			}
+		}
+
+		return cmd.Help()
 	},
 }
 
