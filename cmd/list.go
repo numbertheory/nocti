@@ -835,16 +835,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		}
 
 		// 8. Status bar
-		helpShortcut := "n - new | "
-		backShortcut := ""
-		toggleShortcut := "Ctrl+T - settings | "
-		if isProjectRoot {
-			helpShortcut = ""
-			toggleShortcut = ""
-		} else if initialIsRoot {
-			backShortcut = "q/ESC - back | "
-		}
-		fmt.Printf("\033[%d;1H%s%s %s%s%sCtrl+H - help %s", height, reset, reverseOn, backShortcut, toggleShortcut, helpShortcut, reverseOff)
+		fmt.Printf("\033[%d;1H%s%s Ctrl+H - help %s", height, reset, reverseOn, reverseOff)
 
 		// Input handling
 		b := make([]byte, 8)
