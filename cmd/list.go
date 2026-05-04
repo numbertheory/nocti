@@ -18,10 +18,11 @@ import (
 var RawOutput bool
 
 type DisplayEntry struct {
-	RelPath string
-	IsFile  bool
-	Depth   int
-	Name    string
+	RelPath      string
+	IsFile       bool
+	Depth        int
+	Name         string
+	ResourceType string // "notebook", "todo", "calendar", or empty for normal folder
 }
 
 func ScanProjectResources(root string) ([]string, error) {
@@ -43,12 +44,27 @@ func ScanProjectResources(root string) ([]string, error) {
 	return resources, nil
 }
 
-func BuildDisplayEntries(files []string) []DisplayEntry {
+func BuildDisplayEntries(files []string, baseDir string) []DisplayEntry {
 	var entries []DisplayEntry
 	seenDirs := make(map[string]bool)
 
 	// Sort files to ensure parents are processed before children
 	sort.Strings(files)
+
+	getResourceType := func(path string) string {
+		configPath := filepath.Join(baseDir, path, ".nocti.json")
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			return ""
+		}
+		var config struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(data, &config); err != nil {
+			return ""
+		}
+		return config.Type
+	}
 
 	for _, f := range files {
 		isDirOnly := strings.HasSuffix(f, string(os.PathSeparator))
@@ -60,10 +76,11 @@ func BuildDisplayEntries(files []string) []DisplayEntry {
 			dirPath := filepath.Join(parts[:i+1]...)
 			if !seenDirs[dirPath] {
 				entries = append(entries, DisplayEntry{
-					RelPath: dirPath,
-					IsFile:  false,
-					Depth:   i,
-					Name:    parts[i],
+					RelPath:      dirPath,
+					IsFile:       false,
+					Depth:        i,
+					Name:         parts[i],
+					ResourceType: getResourceType(dirPath),
 				})
 				seenDirs[dirPath] = true
 			}
@@ -74,10 +91,11 @@ func BuildDisplayEntries(files []string) []DisplayEntry {
 			dirPath := cleanPath
 			if !seenDirs[dirPath] {
 				entries = append(entries, DisplayEntry{
-					RelPath: dirPath,
-					IsFile:  false,
-					Depth:   len(parts) - 1,
-					Name:    parts[len(parts)-1],
+					RelPath:      dirPath,
+					IsFile:       false,
+					Depth:        len(parts) - 1,
+					Name:         parts[len(parts)-1],
+					ResourceType: getResourceType(dirPath),
 				})
 				seenDirs[dirPath] = true
 			}
@@ -116,9 +134,32 @@ func ScanNotebookFiles(searchDir string, showHidden bool) ([]string, error) {
 					return filepath.SkipDir
 				}
 			}
-			if _, err := os.Stat(filepath.Join(path, ".nocti.json")); err == nil {
-				// We don't skip the notebook itself, but we skip sub-resources
+
+			// Check if this is a sub-resource
+			configPath := filepath.Join(path, ".nocti.json")
+			if _, err := os.Stat(configPath); err == nil {
 				if path != searchDir {
+					// Read resource type
+					data, err := os.ReadFile(configPath)
+					if err == nil {
+						var config struct {
+							Type string `json:"type"`
+						}
+						if err := json.Unmarshal(data, &config); err == nil {
+							if config.Type == "notebook" {
+								// Recurse into nested notebooks
+								return nil
+							} else {
+								// For other resources, show them but don't recurse
+								relPath, err := filepath.Rel(searchDir, path)
+								if err == nil {
+									results = append(results, relPath+string(os.PathSeparator))
+								}
+								return filepath.SkipDir
+							}
+						}
+					}
+					// If we can't read/parse it, default to skipping
 					return filepath.SkipDir
 				}
 			}
@@ -319,7 +360,7 @@ var ListCmd = &cobra.Command{
 
 		colors, editorCmd := loadColorsAndEditor(searchDir)
 
-		entries := BuildDisplayEntries(files)
+		entries := BuildDisplayEntries(files, searchDir)
 		return runInteractiveList(entries, searchDir, colors, editorCmd, isProjectRoot)
 	},
 }
@@ -514,6 +555,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		iconFolder   = " "
 		iconText     = " "
 		iconMarkdown = " "
+		iconNotebook = " "
+		iconCalendar = " "
+		iconTodo     = " "
 	)
 
 	fmt.Print(enterAltScreen + hideCursor)
@@ -574,13 +618,22 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				entry := entries[i]
 				indent := strings.Repeat("  ", entry.Depth)
 				icon := iconFolder
-				if !isProjectRoot && entry.IsFile {
+				if entry.IsFile {
 					if strings.HasSuffix(strings.ToLower(entry.Name), ".md") {
 						icon = iconMarkdown
 					} else if entry.Name == ".nocti.json" {
 						icon = " " // Gear icon for settings
 					} else {
 						icon = iconText
+					}
+				} else {
+					switch entry.ResourceType {
+					case "notebook":
+						icon = iconNotebook
+					case "calendar":
+						icon = iconCalendar
+					case "todo":
+						icon = iconTodo
 					}
 				}
 
@@ -849,7 +902,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				if !isProjectRoot {
 					showHidden = !showHidden
 					files, _ := ScanNotebookFiles(baseDir, showHidden)
-					entries = BuildDisplayEntries(files)
+					entries = BuildDisplayEntries(files, baseDir)
 					if selectedIndex >= len(entries) {
 						selectedIndex = len(entries) - 1
 					}
@@ -860,13 +913,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				continue
 			}
 			if b[0] == 'q' || b[0] == 'Q' || b[0] == 3 {
-
 				if !isProjectRoot && initialIsRoot {
 					// Return to project root
 					isProjectRoot = true
 					baseDir = initialDir
 					files, _ := ScanProjectResources(baseDir)
-					entries = BuildDisplayEntries(files)
+					entries = BuildDisplayEntries(files, baseDir)
 					colors, editorCmd = loadColorsAndEditor(baseDir)
 					selectedIndex = 0
 					previewOffset = 0
@@ -875,6 +927,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				}
 				break
 			}
+
 			if b[0] == 8 { // Ctrl+H
 				showHelp = true
 				continue
@@ -891,7 +944,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					isProjectRoot = true
 					baseDir = initialDir
 					files, _ := ScanProjectResources(baseDir)
-					entries = BuildDisplayEntries(files)
+					entries = BuildDisplayEntries(files, baseDir)
 					colors, editorCmd = loadColorsAndEditor(baseDir)
 					selectedIndex = 0
 					previewOffset = 0
@@ -942,7 +995,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 						// Refresh
 						files, _ := ScanNotebookFiles(baseDir, showHidden)
-						entries = BuildDisplayEntries(files)
+						entries = BuildDisplayEntries(files, baseDir)
 						// Reset selection to something reasonable if it changed
 						if selectedIndex >= len(entries) {
 							selectedIndex = len(entries) - 1
@@ -988,7 +1041,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							newBaseDir := filepath.Join(baseDir, selected.RelPath)
 							showHidden = false // Reset hidden toggle when switching notebooks
 							newFiles, _ := ScanNotebookFiles(newBaseDir, showHidden)
-							newEntries := BuildDisplayEntries(newFiles)
+							newEntries := BuildDisplayEntries(newFiles, newBaseDir)
 
 							// Refresh colors and editor for the new notebook
 							colors, editorCmd = loadColorsAndEditor(newBaseDir)

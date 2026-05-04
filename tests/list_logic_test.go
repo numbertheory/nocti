@@ -11,7 +11,7 @@ import (
 
 func TestBuildDisplayEntriesEmpty(t *testing.T) {
 	files := []string{}
-	entries := cmd.BuildDisplayEntries(files)
+	entries := cmd.BuildDisplayEntries(files, ".")
 	if len(entries) != 0 {
 		t.Fatalf("Expected 0 entries for empty file list, got %d", len(entries))
 	}
@@ -25,7 +25,7 @@ func TestBuildDisplayEntries(t *testing.T) {
 		"empty-folder" + string(os.PathSeparator),
 	}
 
-	entries := cmd.BuildDisplayEntries(files)
+	entries := cmd.BuildDisplayEntries(files, ".")
 
 	if len(entries) != 6 {
 		t.Fatalf("Expected 6 entries, got %d", len(entries))
@@ -56,8 +56,13 @@ func TestScanNotebookFiles(t *testing.T) {
 	os.Mkdir(filepath.Join(tmpDir, "dir-with-other"), 0755)
 	os.WriteFile(filepath.Join(tmpDir, "dir-with-other", "other.pdf"), []byte(""), 0644)
 	os.Mkdir(filepath.Join(tmpDir, "sub-resource"), 0755)
-	os.WriteFile(filepath.Join(tmpDir, "sub-resource", ".nocti.json"), []byte("{}"), 0644)
-	os.WriteFile(filepath.Join(tmpDir, "sub-resource", "hidden.md"), []byte(""), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "sub-resource", ".nocti.json"), []byte(`{"type":"notebook"}`), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "sub-resource", "visible.md"), []byte(""), 0644)
+
+	os.Mkdir(filepath.Join(tmpDir, "todo-resource"), 0755)
+	os.WriteFile(filepath.Join(tmpDir, "todo-resource", ".nocti.json"), []byte(`{"type":"todo"}`), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "todo-resource", "hidden-task.md"), []byte(""), 0644)
+
 	os.Mkdir(filepath.Join(tmpDir, ".hidden-dir"), 0755)
 	os.WriteFile(filepath.Join(tmpDir, ".hidden-dir", "secret.md"), []byte(""), 0644)
 
@@ -75,7 +80,9 @@ func TestScanNotebookFiles(t *testing.T) {
 	foundEmptyDir := false
 	foundNote2 := false
 	foundOtherDir := false
-	foundSubResource := false
+	foundSubResourceFile := false
+	foundTodoResource := false
+	foundTodoTask := false
 	foundHiddenDir := false
 	foundSettings := false
 	foundTemplate := false
@@ -89,8 +96,12 @@ func TestScanNotebookFiles(t *testing.T) {
 			foundNote2 = true
 		} else if filepath.Base(f) == "other.pdf" || strings.Contains(f, "dir-with-other") {
 			foundOtherDir = true
-		} else if strings.Contains(f, "sub-resource") {
-			foundSubResource = true
+		} else if f == "sub-resource/visible.md" || f == "sub-resource\\visible.md" {
+			foundSubResourceFile = true
+		} else if f == "todo-resource"+string(os.PathSeparator) {
+			foundTodoResource = true
+		} else if strings.Contains(f, "hidden-task.md") {
+			foundTodoTask = true
 		} else if strings.Contains(f, ".hidden-dir") {
 			foundHiddenDir = true
 		} else if f == ".nocti.json" {
@@ -112,8 +123,14 @@ func TestScanNotebookFiles(t *testing.T) {
 	if foundOtherDir {
 		t.Error("dir-with-other should have been ignored")
 	}
-	if foundSubResource {
-		t.Error("sub-resource should have been ignored")
+	if !foundSubResourceFile {
+		t.Error("sub-resource/visible.md should have been found (notebook recursion)")
+	}
+	if !foundTodoResource {
+		t.Error("todo-resource folder not found")
+	}
+	if foundTodoTask {
+		t.Error("todo-resource content should have been ignored (non-notebook resource)")
 	}
 	if foundHiddenDir {
 		t.Error(".hidden-dir should have been ignored")
