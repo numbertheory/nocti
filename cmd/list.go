@@ -658,11 +658,25 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				resFg := ""
 				resBg := ""
 				if entry.ResourceType != "" {
-					resFg = "\033[36m" // Default Cyan foreground
-					resBg = ""         // Default background
-					if colors != nil {
-						resFg = GetFGColorCode(colors.ResourceFg, resFg)
-						resBg = GetColorCode(colors.ResourceBg, resBg)
+					switch entry.ResourceType {
+					case "notebook":
+						resFg = "\033[36m" // Default Cyan
+						if colors != nil {
+							resFg = GetFGColorCode(colors.NotebookFg, resFg)
+							resBg = GetColorCode(colors.NotebookBg, resBg)
+						}
+					case "calendar":
+						resFg = "\033[35m" // Default Magenta
+						if colors != nil {
+							resFg = GetFGColorCode(colors.CalendarFg, resFg)
+							resBg = GetColorCode(colors.CalendarBg, resBg)
+						}
+					case "todo":
+						resFg = "\033[32m" // Default Green
+						if colors != nil {
+							resFg = GetFGColorCode(colors.TodoFg, resFg)
+							resBg = GetColorCode(colors.TodoBg, resBg)
+						}
 					}
 				}
 
@@ -808,13 +822,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				"    ↑ / ↓      : Navigate List / Preview",
 				"    TAB        : Switch Focus",
 				"    PgUp/PgDn  : Page Preview",
+				"    q / ESC    : Back to Parent / Quit",
 				"",
 				"  Actions:",
 				"    n          : New File/Folder",
 				"    Ctrl+T     : Toggle Settings/Templates",
-				"    ENTER      : Edit File",
-				"    q          : Quit",
-				"    ESC        : Close Help",
+				"    ENTER      : Edit / Enter Notebook",
+				"    Ctrl+H     : Show Help",
 			}
 
 			for i, line := range helpLines {
@@ -912,11 +926,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		}
 
 		// 8. Status bar
-		backShortcut := ""
-		if len(navStack) > 0 {
-			backShortcut = "q/ESC - back | "
-		}
-		fmt.Printf("\033[%d;1H%s%s %sCtrl+H - help %s", height, reset, reverseOn, backShortcut, reverseOff)
+		// RULE: The status bar should NEVER have anything besides Ctrl+H for help.
+		// All other navigation (like back) or actions should be documented in the help modal.
+		fmt.Printf("\033[%d;1H%s%s Ctrl+H - help %s", height, reset, reverseOn, reverseOff)
 
 		// Input handling
 		b := make([]byte, 8)

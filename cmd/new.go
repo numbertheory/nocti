@@ -43,8 +43,12 @@ type ColorsConfig struct {
 	HelpFg       string `json:"help_fg,omitempty"`
 	HelpBorderBg string `json:"help_border_bg,omitempty"`
 	HelpBorderFg string `json:"help_border_fg,omitempty"`
-	ResourceFg   string `json:"nocti_resource_fg,omitempty"`
-	ResourceBg   string `json:"nocti_resource_bg,omitempty"`
+	NotebookFg   string `json:"nocti_notebook_fg,omitempty"`
+	NotebookBg   string `json:"nocti_notebook_bg,omitempty"`
+	CalendarFg   string `json:"nocti_calendar_fg,omitempty"`
+	CalendarBg   string `json:"nocti_calendar_bg,omitempty"`
+	TodoFg       string `json:"nocti_todo_fg,omitempty"`
+	TodoBg       string `json:"nocti_todo_bg,omitempty"`
 }
 
 // FullConfig to include all resource types
