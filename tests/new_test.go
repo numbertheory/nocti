@@ -36,7 +36,7 @@ func TestCreateResource(t *testing.T) {
 
 	t.Run("Create a new notebook", func(t *testing.T) {
 		cmd.ResourceName = "test-notebook"
-		err := cmd.CreateResource("notebook")
+		_, err := cmd.CreateResource("notebook", ".", "", "", "")
 		if err != nil {
 			t.Errorf("CreateResource('notebook') failed: %v", err)
 		}
@@ -69,9 +69,9 @@ func TestCreateResource(t *testing.T) {
 			t.Error("Expected '.nocti.json' to be created in notebook directory")
 		} else {
 			data, _ := os.ReadFile(metadataPath)
-			var metadata map[string]string
+			var metadata map[string]interface{}
 			json.Unmarshal(data, &metadata)
-			if metadata["id"] == "" || metadata["name"] != "test-notebook" || metadata["type"] != "notebook" || metadata["created_at"] == "" || metadata["editor"] != "nano" {
+			if metadata["id"] == "" || metadata["name"] != "test-notebook" || metadata["type"] != "notebook" || metadata["created_at"] == "" || metadata["editor"] != "nvim" {
 				t.Errorf("Metadata in .nocti.json is incorrect: %v", metadata)
 			}
 		}
@@ -93,7 +93,7 @@ func TestCreateResource(t *testing.T) {
 
 		cmd.ResourceName = dirName
 		cmd.Overwrite = false
-		err := cmd.CreateResource("notebook")
+		_, err := cmd.CreateResource("notebook", ".", "", "", "")
 		if err != nil {
 			t.Errorf("CreateResource('notebook') failed when directory exists: %v", err)
 		}
@@ -125,7 +125,7 @@ func TestCreateResource(t *testing.T) {
 
 		cmd.ResourceName = dirName
 		cmd.Overwrite = false
-		err := cmd.CreateResource("notebook")
+		_, err := cmd.CreateResource("notebook", ".", "", "", "")
 		if err == nil {
 			t.Error("Expected error when .nocti.json exists and overwrite is false")
 		}
@@ -146,7 +146,7 @@ func TestCreateResource(t *testing.T) {
 
 		cmd.ResourceName = dirName
 		cmd.Overwrite = true
-		err := cmd.CreateResource("notebook")
+		_, err := cmd.CreateResource("notebook", ".", "", "", "")
 		if err != nil {
 			t.Errorf("Expected success when .nocti.json exists and overwrite is true: %v", err)
 		}
@@ -159,7 +159,7 @@ func TestCreateResource(t *testing.T) {
 
 	t.Run("Create a new todo list", func(t *testing.T) {
 		cmd.ResourceName = "test-todo"
-		err := cmd.CreateResource("todo")
+		_, err := cmd.CreateResource("todo", ".", "", "", "")
 		if err != nil {
 			t.Errorf("CreateResource('todo') failed: %v", err)
 		}
@@ -184,7 +184,7 @@ func TestCreateResource(t *testing.T) {
 
 	t.Run("Create a new calendar", func(t *testing.T) {
 		cmd.ResourceName = "test-calendar"
-		err := cmd.CreateResource("calendar")
+		_, err := cmd.CreateResource("calendar", ".", "", "", "")
 		if err != nil {
 			t.Errorf("CreateResource('calendar') failed: %v", err)
 		}
@@ -210,7 +210,7 @@ func TestCreateResource(t *testing.T) {
 	t.Run("Re-creating a notebook with same name should not duplicate config entry", func(t *testing.T) {
 		cmd.ResourceName = "test-notebook" // already created in first test
 		cmd.Overwrite = true
-		err := cmd.CreateResource("notebook")
+		_, err := cmd.CreateResource("notebook", ".", "", "", "")
 		if err != nil {
 			t.Errorf("Expected success when re-creating notebook: %v", err)
 		}
@@ -236,7 +236,7 @@ func TestCreateResource(t *testing.T) {
 
 		cmd.ResourceName = dirName
 		cmd.Overwrite = false
-		err := cmd.CreateResource("notebook")
+		_, err := cmd.CreateResource("notebook", ".", "", "", "")
 		if err == nil {
 			t.Error("Expected error when folder exists but is not in config")
 		}
@@ -245,7 +245,7 @@ func TestCreateResource(t *testing.T) {
 	t.Run("Create a nested resource", func(t *testing.T) {
 		// Create a parent notebook
 		cmd.ResourceName = "parent-nb"
-		cmd.CreateResource("notebook")
+		cmd.CreateResource("notebook", ".", "", "", "")
 
 		// Get parent ID from main config
 		data, _ := os.ReadFile(".nocti/nocti.json")
@@ -265,7 +265,7 @@ func TestCreateResource(t *testing.T) {
 
 		// Create a child notebook
 		cmd.ResourceName = "child-nb"
-		err := cmd.CreateResource("notebook")
+		_, err := cmd.CreateResource("notebook", ".", "", "", "")
 		if err != nil {
 			t.Errorf("Failed to create nested resource: %v", err)
 		}
@@ -319,9 +319,9 @@ func TestCreateResource(t *testing.T) {
 
 	t.Run("Create multiple resources and check unique IDs", func(t *testing.T) {
 		cmd.ResourceName = "nb-1"
-		cmd.CreateResource("notebook")
+		cmd.CreateResource("notebook", ".", "", "", "")
 		cmd.ResourceName = "nb-2"
-		cmd.CreateResource("notebook")
+		cmd.CreateResource("notebook", ".", "", "", "")
 
 		updatedData, _ := os.ReadFile(".nocti/nocti.json")
 		var config cmd.FullConfig

@@ -128,40 +128,43 @@ func FindProjectRoot() (string, error) {
 var ResourceName string
 var Overwrite bool
 
-func CreateResource(resourceType string) error {
+func CreateResource(resourceType string, targetDir string, providedName string, parentID string, parentName string) (string, error) {
 	root, err := FindProjectRoot()
 	if err != nil {
-		return err
+		return "", err
 	}
 	filename := filepath.Join(root, ".nocti/nocti.json")
 
-	// Detect parent resource if inside one
-	var parentID string
-	var parentName string
-	if _, err := os.Stat(".nocti.json"); err == nil {
-		localData, err := os.ReadFile(".nocti.json")
-		if err == nil {
-			var localConfig map[string]interface{}
-			if err := json.Unmarshal(localData, &localConfig); err == nil {
-				if id, ok := localConfig["id"].(string); ok {
-					parentID = id
-				}
-				if name, ok := localConfig["name"].(string); ok {
-					parentName = name
+	// If parent info not provided, try to detect it from the current directory
+	if parentID == "" {
+		if _, err := os.Stat(".nocti.json"); err == nil {
+			localData, err := os.ReadFile(".nocti.json")
+			if err == nil {
+				var localConfig map[string]interface{}
+				if err := json.Unmarshal(localData, &localConfig); err == nil {
+					if id, ok := localConfig["id"].(string); ok {
+						parentID = id
+					}
+					if name, ok := localConfig["name"].(string); ok {
+						parentName = name
+					}
 				}
 			}
 		}
 	}
 
-	// Use flag if provided, otherwise prompt
-	name := ResourceName
+	// Use provided name, or flag, or prompt
+	name := providedName
+	if name == "" {
+		name = ResourceName
+	}
 	if name == "" {
 		prompt := &survey.Input{
 			Message: fmt.Sprintf("Enter %s name:", resourceType),
 		}
 		err := survey.AskOne(prompt, &name, survey.WithValidator(survey.Required))
 		if err != nil {
-			return err
+			return "", err
 		}
 	}
 	name = strings.TrimSpace(name)
@@ -169,12 +172,12 @@ func CreateResource(resourceType string) error {
 	// Read existing config
 	data, err := os.ReadFile(filename)
 	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
+		return "", fmt.Errorf("failed to read config: %w", err)
 	}
 
 	var config FullConfig
 	if err := json.Unmarshal(data, &config); err != nil {
-		return fmt.Errorf("failed to parse config: %w", err)
+		return "", fmt.Errorf("failed to parse config: %w", err)
 	}
 
 	var res Resource
@@ -206,9 +209,12 @@ func CreateResource(resourceType string) error {
 	}
 
 	if !skipConfigUpdate {
+		// Target path for the folder
+		targetPath := filepath.Join(targetDir, name)
+
 		// Check if folder already exists for a new resource
-		if _, err := os.Stat(name); err == nil {
-			return fmt.Errorf("folder '%s' already exists and is not registered as a %s; %s names must be unique", name, resourceType, resourceType)
+		if _, err := os.Stat(targetPath); err == nil {
+			return "", fmt.Errorf("folder '%s' already exists and is not registered as a %s; %s names must be unique", targetPath, resourceType, resourceType)
 		}
 
 		// Create a map of all existing IDs to ensure uniqueness across all types
@@ -255,31 +261,32 @@ func CreateResource(resourceType string) error {
 		// Save updated config
 		updatedData, err := json.MarshalIndent(config, "", "  ")
 		if err != nil {
-			return fmt.Errorf("failed to marshal updated config: %w", err)
+			return "", fmt.Errorf("failed to marshal updated config: %w", err)
 		}
 
 		if err := os.WriteFile(filename, updatedData, 0644); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
+			return "", fmt.Errorf("failed to save config: %w", err)
 		}
 	}
 
 	// Handle folder and hidden .nocti.json for all resource types
+	targetPath := filepath.Join(targetDir, name)
 	// Create directory if it doesn't exist
-	if _, err := os.Stat(name); os.IsNotExist(err) {
-		if err := os.Mkdir(name, 0755); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", name, err)
+	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
+		if err := os.MkdirAll(targetPath, 0755); err != nil {
+			return "", fmt.Errorf("failed to create directory %s: %w", targetPath, err)
 		}
 	}
 
 	// Create or update .nocti.json inside the resource folder
-	resourceConfigPath := filepath.Join(name, ".nocti.json")
+	resourceConfigPath := filepath.Join(targetPath, ".nocti.json")
 	if _, err := os.Stat(resourceConfigPath); err == nil && !Overwrite {
-		return fmt.Errorf("file %s already exists and will not be overwritten (use -o to overwrite)", resourceConfigPath)
+		return "", fmt.Errorf("file %s already exists and will not be overwritten (use -o to overwrite)", resourceConfigPath)
 	}
 
 	editor := config.Editor
 	if editor == "" {
-		editor = "nano"
+		editor = "nvim"
 	}
 
 	resInfo := map[string]interface{}{
@@ -308,9 +315,10 @@ func CreateResource(resourceType string) error {
 		}
 	}
 
-	// If we are inside another resource, update its .nocti.json
-	if _, err := os.Stat(".nocti.json"); err == nil {
-		localData, err := os.ReadFile(".nocti.json")
+	// If the target directory itself is a resource, update its .nocti.json to list this child
+	parentConfigPath := filepath.Join(targetDir, ".nocti.json")
+	if _, err := os.Stat(parentConfigPath); err == nil {
+		localData, err := os.ReadFile(parentConfigPath)
 		if err == nil {
 			var localConfig map[string]interface{}
 			if err := json.Unmarshal(localData, &localConfig); err == nil {
@@ -335,7 +343,7 @@ func CreateResource(resourceType string) error {
 
 				updatedLocalData, err := json.MarshalIndent(localConfig, "", "  ")
 				if err == nil {
-					os.WriteFile(".nocti.json", updatedLocalData, 0644)
+					os.WriteFile(parentConfigPath, updatedLocalData, 0644)
 				}
 			}
 		}
@@ -343,22 +351,22 @@ func CreateResource(resourceType string) error {
 
 	metadataData, err := json.MarshalIndent(resInfo, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal %s metadata: %w", resourceType, err)
+		return "", fmt.Errorf("failed to marshal %s metadata: %w", resourceType, err)
 	}
 
 	if err := os.WriteFile(resourceConfigPath, metadataData, 0644); err != nil {
-		return fmt.Errorf("failed to write %s metadata: %w", resourceType, err)
+		return "", fmt.Errorf("failed to write %s metadata: %w", resourceType, err)
 	}
 
-	fmt.Printf("Successfully created %s: %s (ID: %s)\n", resourceType, name, res.ID)
-	return nil
+	return res.ID, nil
 }
 
 var newNotebookCmd = &cobra.Command{
 	Use:   "notebook",
 	Short: "Create a new notebook",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return CreateResource("notebook")
+		_, err := CreateResource("notebook", ".", "", "", "")
+		return err
 	},
 }
 
@@ -366,7 +374,8 @@ var newTodoCmd = &cobra.Command{
 	Use:   "todo",
 	Short: "Create a new todo list",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return CreateResource("todo")
+		_, err := CreateResource("todo", ".", "", "", "")
+		return err
 	},
 }
 
@@ -374,7 +383,8 @@ var newCalendarCmd = &cobra.Command{
 	Use:   "calendar",
 	Short: "Create a new calendar",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return CreateResource("calendar")
+		_, err := CreateResource("calendar", ".", "", "", "")
+		return err
 	},
 }
 

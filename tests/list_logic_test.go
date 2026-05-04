@@ -59,6 +59,9 @@ func TestScanNotebookFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "sub-resource", ".nocti.json"), []byte(`{"type":"notebook"}`), 0644)
 	os.WriteFile(filepath.Join(tmpDir, "sub-resource", "visible.md"), []byte(""), 0644)
 
+	os.Mkdir(filepath.Join(tmpDir, "empty-notebook"), 0755)
+	os.WriteFile(filepath.Join(tmpDir, "empty-notebook", ".nocti.json"), []byte(`{"type":"notebook"}`), 0644)
+
 	os.Mkdir(filepath.Join(tmpDir, "todo-resource"), 0755)
 	os.WriteFile(filepath.Join(tmpDir, "todo-resource", ".nocti.json"), []byte(`{"type":"todo"}`), 0644)
 	os.WriteFile(filepath.Join(tmpDir, "todo-resource", "hidden-task.md"), []byte(""), 0644)
@@ -81,6 +84,7 @@ func TestScanNotebookFiles(t *testing.T) {
 	foundNote2 := false
 	foundOtherDir := false
 	foundSubResourceFile := false
+	foundEmptyNotebook := false
 	foundTodoResource := false
 	foundTodoTask := false
 	foundHiddenDir := false
@@ -98,6 +102,8 @@ func TestScanNotebookFiles(t *testing.T) {
 			foundOtherDir = true
 		} else if f == "sub-resource/visible.md" || f == "sub-resource\\visible.md" {
 			foundSubResourceFile = true
+		} else if f == "empty-notebook"+string(os.PathSeparator) {
+			foundEmptyNotebook = true
 		} else if f == "todo-resource"+string(os.PathSeparator) {
 			foundTodoResource = true
 		} else if strings.Contains(f, "hidden-task.md") {
@@ -125,6 +131,9 @@ func TestScanNotebookFiles(t *testing.T) {
 	}
 	if !foundSubResourceFile {
 		t.Error("sub-resource/visible.md should have been found (notebook recursion)")
+	}
+	if !foundEmptyNotebook {
+		t.Error("empty-notebook should have been found")
 	}
 	if !foundTodoResource {
 		t.Error("todo-resource folder not found")

@@ -148,8 +148,10 @@ func ScanNotebookFiles(searchDir string, showHidden bool) ([]string, error) {
 						if err := json.Unmarshal(data, &config); err == nil {
 							if config.Type == "notebook" {
 								// Recurse into nested notebooks
+								validDirs[path] = true
 								return nil
 							} else {
+
 								// For other resources, show them but don't recurse
 								relPath, err := filepath.Rel(searchDir, path)
 								if err == nil {
@@ -363,6 +365,39 @@ var ListCmd = &cobra.Command{
 		entries := BuildDisplayEntries(files, searchDir)
 		return runInteractiveList(entries, searchDir, colors, editorCmd, isProjectRoot)
 	},
+}
+
+type ResourceConfig struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+func FindEnclosingResourceIn(startDir string) (*ResourceConfig, error) {
+	wd := startDir
+	for {
+		configPath := filepath.Join(wd, ".nocti.json")
+		if _, err := os.Stat(configPath); err == nil {
+			data, err := os.ReadFile(configPath)
+			if err != nil {
+				return nil, err
+			}
+
+			var config ResourceConfig
+			if err := json.Unmarshal(data, &config); err != nil {
+				return nil, err
+			}
+
+			return &config, nil
+		}
+
+		parent := filepath.Dir(wd)
+		if parent == wd {
+			break
+		}
+		wd = parent
+	}
+	return nil, fmt.Errorf(".nocti.json not found in parents")
 }
 
 func FindEnclosingResource() (string, string, error) {
@@ -840,7 +875,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		// 6. Create Type Modal
 		if showCreateType {
 			modalWidth := 40
-			modalHeight := 8
+			modalHeight := 11
 			startX := (width - modalWidth) / 2
 			startY := (height - modalHeight) / 2
 
@@ -871,16 +906,16 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 			fmt.Printf("\033[%d;%dH%s%s CREATE NEW %s", startY+1, startX+(modalWidth-12)/2, hBg, hFg+boldOn, reset)
 
-			options := []string{" File ", " Folder "}
+			options := []string{" File ", " Folder ", " Notebook ", " Calendar ", " Todo "}
 			for i, opt := range options {
-				fmt.Printf("\033[%d;%dH", startY+3+i, startX+14)
+				fmt.Printf("\033[%d;%dH", startY+3+i, startX+(modalWidth-len(opt))/2)
 				if i == createTypeSelected {
 					fmt.Printf("%s%s%s", hBg+hFg+reverseOn, opt, reset+hBg+hFg)
 				} else {
 					fmt.Printf("%s%s%s", hBg, hFg+opt, reset)
 				}
 			}
-			fmt.Printf("\033[%d;%dH%s%s ↑/↓ to select | ENTER to confirm %s", startY+6, startX+(modalWidth-32)/2, hBg, hFg, reset)
+			fmt.Printf("\033[%d;%dH%s%s ↑/↓ to select | ENTER to confirm %s", startY+modalHeight-2, startX+(modalWidth-32)/2, hBg, hFg, reset)
 		}
 
 		// 7. Create Name Modal
@@ -916,8 +951,15 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			fmt.Printf("\033[%d;%dH%s%s└%s┘%s", startY+modalHeight-1, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
 
 			typeStr := "FILE"
-			if createTypeSelected == 1 {
+			switch createTypeSelected {
+			case 1:
 				typeStr = "FOLDER"
+			case 2:
+				typeStr = "NOTEBOOK"
+			case 3:
+				typeStr = "CALENDAR"
+			case 4:
+				typeStr = "TODO"
 			}
 			fmt.Printf("\033[%d;%dH%s%s NEW %s NAME %s", startY+1, startX+(modalWidth-len(typeStr)-10)/2, hBg, hFg+boldOn, typeStr, reset)
 
@@ -1018,7 +1060,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						targetDir := baseDir
 						if len(entries) > 0 {
 							selected := entries[selectedIndex]
-							if selected.IsFile {
+							if selected.IsFile || selected.ResourceType == "calendar" || selected.ResourceType == "todo" {
 								targetDir = filepath.Join(baseDir, filepath.Dir(selected.RelPath))
 							} else {
 								targetDir = filepath.Join(baseDir, selected.RelPath)
@@ -1026,16 +1068,32 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						}
 
 						newName := createInputName
-						if createTypeSelected == 0 {
-							// File
+						switch createTypeSelected {
+						case 0: // File
 							ext := filepath.Ext(newName)
 							if ext != ".md" && ext != ".txt" {
 								newName += ".md"
 							}
 							os.WriteFile(filepath.Join(targetDir, newName), []byte(""), 0644)
-						} else {
-							// Folder
+						case 1: // Folder
 							os.MkdirAll(filepath.Join(targetDir, newName), 0755)
+						case 2, 3, 4: // Notebook, Calendar, Todo
+							resType := "notebook"
+							if createTypeSelected == 3 {
+								resType = "calendar"
+							} else if createTypeSelected == 4 {
+								resType = "todo"
+							}
+
+							// Find parent resource if targetDir is inside one
+							var parentID, parentName string
+							pConfig, err := FindEnclosingResourceIn(targetDir)
+							if err == nil {
+								parentID = pConfig.ID
+								parentName = pConfig.Name
+							}
+
+							CreateResource(resType, targetDir, newName, parentID, parentName)
 						}
 
 						// Refresh
@@ -1121,9 +1179,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			if showCreateType {
 				switch b[2] {
 				case 65: // Up
-					createTypeSelected = 0
+					if createTypeSelected > 0 {
+						createTypeSelected--
+					}
 				case 66: // Down
-					createTypeSelected = 1
+					if createTypeSelected < 4 {
+						createTypeSelected++
+					}
 				}
 				continue
 			}
