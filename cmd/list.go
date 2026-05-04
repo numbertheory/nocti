@@ -401,6 +401,9 @@ func FindEnclosingResource() (string, string, error) {
 }
 
 func GetFGColorCode(colorName string, defaultCode string) string {
+	if strings.ToLower(colorName) == "default" {
+		return "\033[39m" // Reset foreground
+	}
 	colors := map[string]string{
 		"black":         "\033[38;5;0m",
 		"red":           "\033[38;5;1m",
@@ -452,6 +455,9 @@ func GetFGColorCode(colorName string, defaultCode string) string {
 }
 
 func GetColorCode(colorName string, defaultCode string) string {
+	if strings.ToLower(colorName) == "default" {
+		return "\033[49m" // Reset background
+	}
 	colors := map[string]string{
 		"black":         "\033[48;5;0m",
 		"red":           "\033[48;5;1m",
@@ -642,15 +648,27 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					displayStr = displayStr[:listWidth-3] + "..."
 				}
 
+				// Apply resource-specific colors
+				resFg := ""
+				resBg := ""
+				if entry.ResourceType != "" {
+					resFg = "\033[36m" // Default Cyan foreground
+					resBg = ""         // Default background
+					if colors != nil {
+						resFg = GetFGColorCode(colors.ResourceFg, resFg)
+						resBg = GetColorCode(colors.ResourceBg, resBg)
+					}
+				}
+
 				if i == selectedIndex {
 					fmt.Print(reverseOn)
 					if focusList {
 						fmt.Print(boldOn)
 					}
-					fmt.Printf("%-*s", listWidth, displayStr)
-					fmt.Print(reverseOff + boldOff)
+					fmt.Printf("%s%s%-*s", resFg, resBg, listWidth, displayStr)
+					fmt.Print(reverseOff + boldOff + reset)
 				} else {
-					fmt.Printf("%-*s", listWidth, displayStr)
+					fmt.Printf("%s%s%-*s%s", resFg, resBg, listWidth, displayStr, reset)
 				}
 			} else {
 				fmt.Printf("%-*s", listWidth, "")

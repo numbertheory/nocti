@@ -33,6 +33,8 @@ The interactive TUI can be customized via the `colors` key in your `.nocti/nocti
 *   `help_fg`: Foreground (text) color of the help modal.
 *   `help_border_bg`: Background color for the help modal border.
 *   `help_border_fg`: Foreground (line) color for the help modal border.
+*   `nocti_resource_fg`: Background color for the nocti resources in the file view.
+*   `nocti_resource_bg`: Foreground color for the nocti resources in the file view.
 
 ### Example Configuration
 
@@ -44,7 +46,9 @@ The interactive TUI can be customized via the `colors` key in your `.nocti/nocti
     "help_bg": "darkgray",
     "help_fg": "white",
     "help_border_bg": "black",
-    "help_border_fg": "gray"
+    "help_border_fg": "gray",
+    "nocti_resource_fg": "cyan",
+    "nocti_resource_bg": "default",
   }
 }
 ```
