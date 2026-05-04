@@ -509,9 +509,15 @@ func GetColorCode(colorName string, defaultCode string) string {
 }
 
 func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsConfig, editorCmd string, isProjectRoot bool) error {
-	// Track initial state for "back to root" functionality
-	initialDir := baseDir
-	initialIsRoot := isProjectRoot
+	type navState struct {
+		dir           string
+		entries       []DisplayEntry
+		isProjectRoot bool
+		colors        *ColorsConfig
+		editorCmd     string
+	}
+	var navStack []navState
+
 	showHidden := false
 
 	// Check if stdout is a terminal
@@ -906,7 +912,11 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		}
 
 		// 8. Status bar
-		fmt.Printf("\033[%d;1H%s%s Ctrl+H - help %s", height, reset, reverseOn, reverseOff)
+		backShortcut := ""
+		if len(navStack) > 0 {
+			backShortcut = "q/ESC - back | "
+		}
+		fmt.Printf("\033[%d;1H%s%s %sCtrl+H - help %s", height, reset, reverseOn, backShortcut, reverseOff)
 
 		// Input handling
 		b := make([]byte, 8)
@@ -931,13 +941,16 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				continue
 			}
 			if b[0] == 'q' || b[0] == 'Q' || b[0] == 3 {
-				if !isProjectRoot && initialIsRoot {
-					// Return to project root
-					isProjectRoot = true
-					baseDir = initialDir
-					files, _ := ScanProjectResources(baseDir)
-					entries = BuildDisplayEntries(files, baseDir)
-					colors, editorCmd = loadColorsAndEditor(baseDir)
+				if len(navStack) > 0 {
+					// Pop from stack
+					last := navStack[len(navStack)-1]
+					navStack = navStack[:len(navStack)-1]
+
+					baseDir = last.dir
+					entries = last.entries
+					isProjectRoot = last.isProjectRoot
+					colors = last.colors
+					editorCmd = last.editorCmd
 					selectedIndex = 0
 					previewOffset = 0
 					focusList = true
@@ -945,7 +958,6 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				}
 				break
 			}
-
 			if b[0] == 8 { // Ctrl+H
 				showHelp = true
 				continue
@@ -957,13 +969,16 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					showCreateName = false
 					continue
 				}
-				if !isProjectRoot && initialIsRoot {
-					// Return to project root
-					isProjectRoot = true
-					baseDir = initialDir
-					files, _ := ScanProjectResources(baseDir)
-					entries = BuildDisplayEntries(files, baseDir)
-					colors, editorCmd = loadColorsAndEditor(baseDir)
+				if len(navStack) > 0 {
+					// Pop from stack
+					last := navStack[len(navStack)-1]
+					navStack = navStack[:len(navStack)-1]
+
+					baseDir = last.dir
+					entries = last.entries
+					isProjectRoot = last.isProjectRoot
+					colors = last.colors
+					editorCmd = last.editorCmd
 					selectedIndex = 0
 					previewOffset = 0
 					focusList = true
@@ -1045,48 +1060,49 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				focusList = !focusList
 			}
 			if b[0] == '\r' || b[0] == '\n' {
-				if isProjectRoot && len(entries) > 0 {
+				if len(entries) > 0 {
 					selected := entries[selectedIndex]
-					resConfigPath := filepath.Join(baseDir, selected.RelPath, ".nocti.json")
-					data, err := os.ReadFile(resConfigPath)
-					if err == nil {
-						var config struct {
-							Type string `json:"type"`
-						}
-						json.Unmarshal(data, &config)
-						if config.Type == "notebook" {
-							// Jump to notebook
-							newBaseDir := filepath.Join(baseDir, selected.RelPath)
-							showHidden = false // Reset hidden toggle when switching notebooks
-							newFiles, _ := ScanNotebookFiles(newBaseDir, showHidden)
-							newEntries := BuildDisplayEntries(newFiles, newBaseDir)
+					if !selected.IsFile && selected.ResourceType == "notebook" {
+						// Push current state to stack
+						navStack = append(navStack, navState{
+							dir:           baseDir,
+							entries:       entries,
+							isProjectRoot: isProjectRoot,
+							colors:        colors,
+							editorCmd:     editorCmd,
+						})
 
-							// Refresh colors and editor for the new notebook
-							colors, editorCmd = loadColorsAndEditor(newBaseDir)
+						// Jump to notebook
+						newBaseDir := filepath.Join(baseDir, selected.RelPath)
+						showHidden = false // Reset hidden toggle when switching notebooks
+						newFiles, _ := ScanNotebookFiles(newBaseDir, showHidden)
+						newEntries := BuildDisplayEntries(newFiles, newBaseDir)
 
-							entries = newEntries
-							baseDir = newBaseDir
-							isProjectRoot = false
-							selectedIndex = 0
-							previewOffset = 0
-							focusList = true
-							continue
-						}
+						// Refresh colors and editor for the new notebook
+						colors, editorCmd = loadColorsAndEditor(newBaseDir)
+
+						entries = newEntries
+						baseDir = newBaseDir
+						isProjectRoot = false
+						selectedIndex = 0
+						previewOffset = 0
+						focusList = true
+						continue
+					} else if selected.IsFile {
+						term.Restore(int(os.Stdin.Fd()), oldState)
+						fmt.Print(showCursor + exitAltScreen)
+
+						filePath := filepath.Join(baseDir, selected.RelPath)
+						cmd := exec.Command(editorCmd, filePath)
+						cmd.Stdin = os.Stdin
+						cmd.Stdout = os.Stdout
+						cmd.Stderr = os.Stderr
+						cmd.Run()
+
+						// Re-enter raw mode and alt screen
+						oldState, _ = term.MakeRaw(int(os.Stdin.Fd()))
+						fmt.Print(enterAltScreen + hideCursor)
 					}
-				} else if !isProjectRoot && len(entries) > 0 && entries[selectedIndex].IsFile {
-					term.Restore(int(os.Stdin.Fd()), oldState)
-					fmt.Print(showCursor + exitAltScreen)
-
-					filePath := filepath.Join(baseDir, entries[selectedIndex].RelPath)
-					cmd := exec.Command(editorCmd, filePath)
-					cmd.Stdin = os.Stdin
-					cmd.Stdout = os.Stdout
-					cmd.Stderr = os.Stderr
-					cmd.Run()
-
-					// Re-enter raw mode and alt screen
-					oldState, _ = term.MakeRaw(int(os.Stdin.Fd()))
-					fmt.Print(enterAltScreen + hideCursor)
 				}
 			}
 		} else if n >= 3 && b[0] == 27 && b[1] == 91 {
