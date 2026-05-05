@@ -980,80 +980,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		}
 
 		if n == 1 {
-			if b[0] == 20 { // Ctrl+T
-				if !isProjectRoot {
-					showHidden = !showHidden
-					files, _ := ScanNotebookFiles(baseDir, showHidden)
-					entries = BuildDisplayEntries(files, baseDir)
-					if selectedIndex >= len(entries) {
-						selectedIndex = len(entries) - 1
-					}
-					if selectedIndex < 0 {
-						selectedIndex = 0
-					}
-				}
-				continue
-			}
-			if b[0] == 'q' || b[0] == 'Q' || b[0] == 3 {
-				if len(navStack) > 0 {
-					// Pop from stack
-					last := navStack[len(navStack)-1]
-					navStack = navStack[:len(navStack)-1]
-
-					baseDir = last.dir
-					entries = last.entries
-					isProjectRoot = last.isProjectRoot
-					colors = last.colors
-					editorCmd = last.editorCmd
-					selectedIndex = 0
-					previewOffset = 0
-					focusList = true
-					continue
-				}
-				break
-			}
-			if b[0] == 8 { // Ctrl+H
-				showHelp = true
-				continue
-			}
-			if b[0] == 27 { // ESC
-				if showHelp || showCreateType || showCreateName {
-					showHelp = false
-					showCreateType = false
-					showCreateName = false
-					continue
-				}
-				if len(navStack) > 0 {
-					// Pop from stack
-					last := navStack[len(navStack)-1]
-					navStack = navStack[:len(navStack)-1]
-
-					baseDir = last.dir
-					entries = last.entries
-					isProjectRoot = last.isProjectRoot
-					colors = last.colors
-					editorCmd = last.editorCmd
-					selectedIndex = 0
-					previewOffset = 0
-					focusList = true
-					continue
-				}
-				break
-			}
-
-			if showHelp {
-				continue
-			}
-
-			// Creation state handling
-			if showCreateType {
-				if b[0] == '\r' || b[0] == '\n' {
-					showCreateType = false
-					showCreateName = true
-					createInputName = ""
-					continue
-				}
-			} else if showCreateName {
+			// Priority 1: Text Input Modal (Naming)
+			if showCreateName {
 				if b[0] == '\r' || b[0] == '\n' {
 					// Perform creation
 					if createInputName != "" {
@@ -1109,6 +1037,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					}
 					showCreateName = false
 					continue
+				} else if b[0] == 27 { // ESC
+					showCreateName = false
+					continue
 				} else if b[0] == 127 || b[0] == 8 { // Backspace
 					if len(createInputName) > 0 {
 						createInputName = createInputName[:len(createInputName)-1]
@@ -1118,6 +1049,85 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					createInputName += string(b[0])
 					continue
 				}
+				continue // Ignore other keys while naming
+			}
+
+			// Priority 2: Selection Modals (Help, Type Selection)
+			if showHelp {
+				if b[0] == 27 || b[0] == 'q' || b[0] == 'Q' || b[0] == 8 { // ESC, q, Ctrl+H
+					showHelp = false
+				}
+				continue
+			}
+			if showCreateType {
+				if b[0] == 27 { // ESC
+					showCreateType = false
+					continue
+				}
+				if b[0] == '\r' || b[0] == '\n' {
+					showCreateType = false
+					showCreateName = true
+					createInputName = ""
+					continue
+				}
+				// Arrow keys are handled in the n >= 3 block
+				continue
+			}
+
+			// Priority 3: General Navigation
+			if b[0] == 20 { // Ctrl+T
+				if !isProjectRoot {
+					showHidden = !showHidden
+					files, _ := ScanNotebookFiles(baseDir, showHidden)
+					entries = BuildDisplayEntries(files, baseDir)
+					if selectedIndex >= len(entries) {
+						selectedIndex = len(entries) - 1
+					}
+					if selectedIndex < 0 {
+						selectedIndex = 0
+					}
+				}
+				continue
+			}
+			if b[0] == 'q' || b[0] == 'Q' || b[0] == 3 {
+				if len(navStack) > 0 {
+					// Pop from stack
+					last := navStack[len(navStack)-1]
+					navStack = navStack[:len(navStack)-1]
+
+					baseDir = last.dir
+					entries = last.entries
+					isProjectRoot = last.isProjectRoot
+					colors = last.colors
+					editorCmd = last.editorCmd
+					selectedIndex = 0
+					previewOffset = 0
+					focusList = true
+					continue
+				}
+				break
+			}
+			if b[0] == 8 { // Ctrl+H
+				showHelp = true
+				continue
+			}
+			if b[0] == 27 { // ESC
+				if len(navStack) > 0 {
+					// Pop from stack
+					last := navStack[len(navStack)-1]
+					navStack = navStack[:len(navStack)-1]
+
+					baseDir = last.dir
+					entries = last.entries
+					isProjectRoot = last.isProjectRoot
+					colors = last.colors
+					editorCmd = last.editorCmd
+					selectedIndex = 0
+					previewOffset = 0
+					focusList = true
+					continue
+				}
+				break
 			}
 
 			if !isProjectRoot && (b[0] == 'n' || b[0] == 'N') {
