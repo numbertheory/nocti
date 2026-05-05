@@ -9,9 +9,39 @@ import (
 	"testing"
 )
 
+func TestBuildDisplayEntriesWithRoot(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "nocti-root-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	config := struct {
+		Name string `json:"name"`
+		Type string `json:"type"`
+	}{Name: "My Notebook", Type: "notebook"}
+	data, _ := json.Marshal(config)
+	os.WriteFile(filepath.Join(tmpDir, ".nocti.json"), data, 0644)
+
+	files := []string{"note1.md"}
+	entries := cmd.BuildDisplayEntries(files, tmpDir, true)
+
+	if len(entries) != 2 {
+		t.Fatalf("Expected 2 entries (root + file), got %d", len(entries))
+	}
+
+	if entries[0].Name != "My Notebook" || entries[0].Depth != 0 || entries[0].RelPath != "." {
+		t.Errorf("Root entry incorrect: %+v", entries[0])
+	}
+
+	if entries[1].Name != "note1.md" || entries[1].Depth != 1 {
+		t.Errorf("File entry incorrect: %+v", entries[1])
+	}
+}
+
 func TestBuildDisplayEntriesEmpty(t *testing.T) {
 	files := []string{}
-	entries := cmd.BuildDisplayEntries(files, ".")
+	entries := cmd.BuildDisplayEntries(files, ".", false)
 	if len(entries) != 0 {
 		t.Fatalf("Expected 0 entries for empty file list, got %d", len(entries))
 	}
@@ -25,7 +55,7 @@ func TestBuildDisplayEntries(t *testing.T) {
 		"empty-folder" + string(os.PathSeparator),
 	}
 
-	entries := cmd.BuildDisplayEntries(files, ".")
+	entries := cmd.BuildDisplayEntries(files, ".", false)
 
 	if len(entries) != 6 {
 		t.Fatalf("Expected 6 entries, got %d", len(entries))

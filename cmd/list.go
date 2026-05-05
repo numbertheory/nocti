@@ -44,7 +44,7 @@ func ScanProjectResources(root string) ([]string, error) {
 	return resources, nil
 }
 
-func BuildDisplayEntries(files []string, baseDir string) []DisplayEntry {
+func BuildDisplayEntries(files []string, baseDir string, includeRoot bool) []DisplayEntry {
 	var entries []DisplayEntry
 	seenDirs := make(map[string]bool)
 
@@ -66,6 +66,37 @@ func BuildDisplayEntries(files []string, baseDir string) []DisplayEntry {
 		return config.Type
 	}
 
+	depthOffset := 0
+	if includeRoot {
+		depthOffset = 1
+		// Add the root resource itself
+		configPath := filepath.Join(baseDir, ".nocti.json")
+		name := filepath.Base(baseDir)
+		resType := "notebook"
+		if data, err := os.ReadFile(configPath); err == nil {
+			var config struct {
+				Name string `json:"name"`
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(data, &config); err == nil {
+				if config.Name != "" {
+					name = config.Name
+				}
+				if config.Type != "" {
+					resType = config.Type
+				}
+			}
+		}
+
+		entries = append(entries, DisplayEntry{
+			RelPath:      ".",
+			IsFile:       false,
+			Depth:        0,
+			Name:         name,
+			ResourceType: resType,
+		})
+	}
+
 	for _, f := range files {
 		isDirOnly := strings.HasSuffix(f, string(os.PathSeparator))
 		cleanPath := strings.TrimSuffix(f, string(os.PathSeparator))
@@ -78,7 +109,7 @@ func BuildDisplayEntries(files []string, baseDir string) []DisplayEntry {
 				entries = append(entries, DisplayEntry{
 					RelPath:      dirPath,
 					IsFile:       false,
-					Depth:        i,
+					Depth:        i + depthOffset,
 					Name:         parts[i],
 					ResourceType: getResourceType(dirPath),
 				})
@@ -93,7 +124,7 @@ func BuildDisplayEntries(files []string, baseDir string) []DisplayEntry {
 				entries = append(entries, DisplayEntry{
 					RelPath:      dirPath,
 					IsFile:       false,
-					Depth:        len(parts) - 1,
+					Depth:        len(parts) - 1 + depthOffset,
 					Name:         parts[len(parts)-1],
 					ResourceType: getResourceType(dirPath),
 				})
@@ -104,7 +135,7 @@ func BuildDisplayEntries(files []string, baseDir string) []DisplayEntry {
 			entries = append(entries, DisplayEntry{
 				RelPath: f,
 				IsFile:  true,
-				Depth:   len(parts) - 1,
+				Depth:   len(parts) - 1 + depthOffset,
 				Name:    parts[len(parts)-1],
 			})
 		}
@@ -362,7 +393,7 @@ var ListCmd = &cobra.Command{
 
 		colors, editorCmd := loadColorsAndEditor(searchDir)
 
-		entries := BuildDisplayEntries(files, searchDir)
+		entries := BuildDisplayEntries(files, searchDir, !isProjectRoot)
 		return runInteractiveList(entries, searchDir, colors, editorCmd, isProjectRoot)
 	},
 }
@@ -1025,8 +1056,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						}
 
 						// Refresh
-						files, _ := ScanNotebookFiles(baseDir, showHidden)
-						entries = BuildDisplayEntries(files, baseDir)
+						var files []string
+						if isProjectRoot {
+							files, _ = ScanProjectResources(baseDir)
+						} else {
+							files, _ = ScanNotebookFiles(baseDir, showHidden)
+						}
+						entries = BuildDisplayEntries(files, baseDir, !isProjectRoot)
 						// Reset selection to something reasonable if it changed
 						if selectedIndex >= len(entries) {
 							selectedIndex = len(entries) - 1
@@ -1079,7 +1115,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				if !isProjectRoot {
 					showHidden = !showHidden
 					files, _ := ScanNotebookFiles(baseDir, showHidden)
-					entries = BuildDisplayEntries(files, baseDir)
+					entries = BuildDisplayEntries(files, baseDir, !isProjectRoot)
 					if selectedIndex >= len(entries) {
 						selectedIndex = len(entries) - 1
 					}
@@ -1156,8 +1192,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						newBaseDir := filepath.Join(baseDir, selected.RelPath)
 						showHidden = false // Reset hidden toggle when switching notebooks
 						newFiles, _ := ScanNotebookFiles(newBaseDir, showHidden)
-						newEntries := BuildDisplayEntries(newFiles, newBaseDir)
-
+						newEntries := BuildDisplayEntries(newFiles, newBaseDir, true)
 						// Refresh colors and editor for the new notebook
 						colors, editorCmd = loadColorsAndEditor(newBaseDir)
 
