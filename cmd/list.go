@@ -23,12 +23,14 @@ type DisplayEntry struct {
 	ResourceType string // "notebook", "todo", "calendar", or empty for normal folder
 }
 
-func BuildDisplayEntries(files []string, baseDir string, includeRoot bool) []DisplayEntry {
+func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipSort bool) []DisplayEntry {
 	var entries []DisplayEntry
 	seenDirs := make(map[string]bool)
 
-	// Sort files to ensure parents are processed before children
-	sort.Strings(files)
+	// Sort files to ensure parents are processed before children, unless skipped
+	if !skipSort {
+		sort.Strings(files)
+	}
 
 	getResourceType := func(path string) string {
 		configPath := filepath.Join(baseDir, path, ".nocti.json")
@@ -275,7 +277,7 @@ var ListCmd = &cobra.Command{
 
 		colors, editorCmd := loadColorsAndEditor(searchDir)
 
-		entries := BuildDisplayEntries(files, searchDir, true)
+		entries := BuildDisplayEntries(files, searchDir, true, currentResType == "calendar")
 		return runInteractiveList(entries, searchDir, colors, editorCmd, isProjectRoot, currentResType)
 	},
 }
@@ -486,6 +488,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 	defer term.Restore(int(os.Stdin.Fd()), oldState)
 
 	selectedIndex := 0
+	listOffset := 0
 	previewOffset := 0
 	focusList := true // true = List, false = Preview
 	showHelp := false
@@ -522,6 +525,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		iconCalendar = " "
 		iconTodo     = " "
 		iconProject  = " "
+		iconDay      = " "
 	)
 
 	fmt.Print(enterAltScreen + hideCursor)
@@ -589,8 +593,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			row := i + headerHeight + 1
 			fmt.Printf("\033[%d;1H", row)
 
-			if i < len(entries) {
-				entry := entries[i]
+			entryIdx := i + listOffset
+			if entryIdx < len(entries) {
+				entry := entries[entryIdx]
 				indent := strings.Repeat("  ", entry.Depth)
 				icon := iconFolder
 				if entry.IsFile {
@@ -599,7 +604,11 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					} else if entry.Name == ".nocti.json" || entry.Name == "nocti.json" {
 						icon = " " // Gear icon for settings
 					} else {
-						icon = iconText
+						if currentResType == "calendar" {
+							icon = iconDay
+						} else {
+							icon = iconText
+						}
 					}
 				} else {
 
@@ -647,7 +656,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					}
 				}
 
-				if i == selectedIndex {
+				if entryIdx == selectedIndex {
 					fmt.Print(reverseOn)
 					if focusList {
 						fmt.Print(boldOn)
@@ -797,6 +806,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			helpLines := []string{
 				"  Navigation:",
 				"    ↑ / ↓      : Navigate List / Preview",
+				"    Ctrl+↑ / ↓ : Jump 7 Days",
+				"    Home / End : Start / End of List",
 				"    TAB        : Switch Focus",
 				"    PgUp/PgDn  : Page Preview",
 				"    q / ESC    : Back to Parent / Quit",
@@ -1021,7 +1032,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						} else {
 							files, _ = ScanNotebookFiles(baseDir, showHidden)
 						}
-						entries = BuildDisplayEntries(files, baseDir, true)
+						entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar")
 						if selectedIndex >= len(entries) {
 							selectedIndex = len(entries) - 1
 						}
@@ -1082,7 +1093,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					} else {
 						files, _ = ScanNotebookFiles(baseDir, showHidden)
 					}
-					entries = BuildDisplayEntries(files, baseDir, true)
+					entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar")
 					if selectedIndex >= len(entries) {
 						selectedIndex = len(entries) - 1
 					}
@@ -1139,7 +1150,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				} else {
 					files, _ = ScanNotebookFiles(baseDir, showHidden)
 				}
-				entries = BuildDisplayEntries(files, baseDir, true)
+				entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar")
 				if selectedIndex >= len(entries) {
 					selectedIndex = len(entries) - 1
 				}
@@ -1231,7 +1242,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						} else {
 							newFiles, _ = ScanNotebookFiles(newBaseDir, showHidden)
 						}
-						newEntries := BuildDisplayEntries(newFiles, newBaseDir, true)
+						newEntries := BuildDisplayEntries(newFiles, newBaseDir, true, currentResType == "calendar")
 
 						// Refresh colors and editor for the new resource
 						colors, editorCmd = loadColorsAndEditor(newBaseDir)
@@ -1244,6 +1255,10 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						focusList = true
 						continue
 					} else if selected.IsFile {
+						if currentResType == "calendar" && selected.Name != ".nocti.json" && selected.Name != "nocti.json" {
+							// For now, do nothing when pressing enter on a calendar day
+							continue
+						}
 
 						term.Restore(int(os.Stdin.Fd()), oldState)
 						fmt.Print(showCursor + exitAltScreen)
@@ -1262,9 +1277,18 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				}
 			}
 		} else if n >= 3 && b[0] == 27 && b[1] == 91 {
+			// Handle extended escape sequences (Ctrl+Arrows, Home, End, etc.)
+			// Ctrl+Up:   ESC [ 1 ; 5 A
+			// Ctrl+Down: ESC [ 1 ; 5 B
+			isCtrlUp := n >= 6 && b[2] == 49 && b[3] == 59 && b[4] == 53 && b[5] == 65
+			isCtrlDown := n >= 6 && b[2] == 49 && b[3] == 59 && b[4] == 53 && b[5] == 66
+			isHome := b[2] == 72 || (n >= 4 && b[2] == 49 && b[3] == 126)
+			isEnd := b[2] == 70 || (n >= 4 && b[2] == 52 && b[3] == 126)
+			isUp := b[2] == 65
+			isDown := b[2] == 66
+
 			if showCreateType {
-				switch b[2] {
-				case 65: // Up
+				if isUp {
 					minIdx := 0
 					if isProjectRoot {
 						minIdx = 2
@@ -1272,7 +1296,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					if createTypeSelected > minIdx {
 						createTypeSelected--
 					}
-				case 66: // Down
+				} else if isDown {
 					if createTypeSelected < 4 {
 						createTypeSelected++
 					}
@@ -1282,16 +1306,52 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 			if !showHelp && !showCreateName {
 				if focusList {
-					switch b[2] {
-					case 65: // Up
+					if isCtrlUp {
+						selectedIndex -= 7
+						if selectedIndex < 0 {
+							selectedIndex = 0
+						}
+						previewOffset = 0
+						if selectedIndex < listOffset {
+							listOffset = selectedIndex
+						}
+					} else if isCtrlDown {
+						selectedIndex += 7
+						if selectedIndex >= len(entries) {
+							selectedIndex = len(entries) - 1
+						}
+						previewOffset = 0
+						if selectedIndex >= listOffset+contentHeight {
+							listOffset = selectedIndex - contentHeight + 1
+						}
+					} else if isUp {
 						if selectedIndex > 0 {
 							selectedIndex--
-							previewOffset = 0
 						}
-					case 66: // Down
+						previewOffset = 0
+						if selectedIndex < listOffset {
+							listOffset = selectedIndex
+						}
+					} else if isDown {
 						if selectedIndex < len(entries)-1 {
 							selectedIndex++
-							previewOffset = 0
+						}
+						previewOffset = 0
+						if selectedIndex >= listOffset+contentHeight {
+							listOffset = selectedIndex - contentHeight + 1
+						}
+					} else if isHome {
+						selectedIndex = 0
+						listOffset = 0
+						previewOffset = 0
+					} else if isEnd {
+						selectedIndex = len(entries) - 1
+						if selectedIndex < 0 {
+							selectedIndex = 0
+						}
+						previewOffset = 0
+						if selectedIndex >= contentHeight {
+							listOffset = selectedIndex - contentHeight + 1
 						}
 					}
 				} else {

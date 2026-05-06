@@ -24,7 +24,7 @@ func TestBuildDisplayEntriesWithProjectRoot(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, ".nocti", "nocti.json"), data, 0644)
 
 	files := []string{"notebook1" + string(os.PathSeparator)}
-	entries := cmd.BuildDisplayEntries(files, tmpDir, true)
+	entries := cmd.BuildDisplayEntries(files, tmpDir, true, false)
 
 	if len(entries) != 2 {
 		t.Fatalf("Expected 2 entries (project root + notebook), got %d", len(entries))
@@ -50,7 +50,7 @@ func TestBuildDisplayEntriesWithRoot(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, ".nocti.json"), data, 0644)
 
 	files := []string{"note1.md"}
-	entries := cmd.BuildDisplayEntries(files, tmpDir, true)
+	entries := cmd.BuildDisplayEntries(files, tmpDir, true, false)
 
 	if len(entries) != 2 {
 		t.Fatalf("Expected 2 entries (root + file), got %d", len(entries))
@@ -67,7 +67,7 @@ func TestBuildDisplayEntriesWithRoot(t *testing.T) {
 
 func TestBuildDisplayEntriesEmpty(t *testing.T) {
 	files := []string{}
-	entries := cmd.BuildDisplayEntries(files, ".", false)
+	entries := cmd.BuildDisplayEntries(files, ".", false, false)
 	if len(entries) != 0 {
 		t.Fatalf("Expected 0 entries for empty file list, got %d", len(entries))
 	}
@@ -81,7 +81,7 @@ func TestBuildDisplayEntries(t *testing.T) {
 		"empty-folder" + string(os.PathSeparator),
 	}
 
-	entries := cmd.BuildDisplayEntries(files, ".", false)
+	entries := cmd.BuildDisplayEntries(files, ".", false, false)
 
 	if len(entries) != 6 {
 		t.Fatalf("Expected 6 entries, got %d", len(entries))
