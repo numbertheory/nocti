@@ -206,8 +206,8 @@ var ListCmd = &cobra.Command{
 				return fmt.Errorf("failed to parse config in '%s': %w", target, err)
 			}
 
-			if config.Type != "notebook" {
-				return fmt.Errorf("target '%s' is a %s, but 'list' only works on notebooks", target, config.Type)
+			if config.Type != "notebook" && config.Type != "calendar" && config.Type != "todo" {
+				return fmt.Errorf("target '%s' is a %s, but 'list' only works on notebooks, calendars, and todos", target, config.Type)
 			}
 			searchDir = target
 		} else {
@@ -218,16 +218,25 @@ var ListCmd = &cobra.Command{
 				isProjectRoot = true
 				searchDir = "."
 			} else {
-				// Detect if we are inside a nocti resource and if it's a notebook
+				// Detect if we are inside a nocti resource
 				_, resourceType, err := FindEnclosingResource()
 				if err != nil {
 					return fmt.Errorf("not inside a nocti resource and no resource name provided: %w", err)
 				}
 
-				if resourceType != "notebook" {
-					return fmt.Errorf("the 'list' command is only available inside a notebook resource (current type: %s)", resourceType)
+				if resourceType != "notebook" && resourceType != "calendar" && resourceType != "todo" {
+					return fmt.Errorf("the 'list' command is only available inside a notebook, calendar, or todo resource (current type: %s)", resourceType)
 				}
 				searchDir = "."
+			}
+		}
+
+		// Get the specific resource type if not project root
+		currentResType := ""
+		if !isProjectRoot {
+			config, err := FindEnclosingResourceIn(searchDir)
+			if err == nil {
+				currentResType = config.Type
 			}
 		}
 
@@ -235,6 +244,8 @@ var ListCmd = &cobra.Command{
 		var err error
 		if isProjectRoot {
 			files, err = ScanProjectResources(searchDir, false)
+		} else if currentResType == "calendar" {
+			files, err = ScanCalendarDays(searchDir, false)
 		} else {
 			files, err = ScanNotebookFiles(searchDir, false)
 		}
@@ -265,7 +276,7 @@ var ListCmd = &cobra.Command{
 		colors, editorCmd := loadColorsAndEditor(searchDir)
 
 		entries := BuildDisplayEntries(files, searchDir, true)
-		return runInteractiveList(entries, searchDir, colors, editorCmd, isProjectRoot)
+		return runInteractiveList(entries, searchDir, colors, editorCmd, isProjectRoot, currentResType)
 	},
 }
 
@@ -445,13 +456,14 @@ func GetColorCode(colorName string, defaultCode string) string {
 	return defaultCode
 }
 
-func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsConfig, editorCmd string, isProjectRoot bool) error {
+func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsConfig, editorCmd string, isProjectRoot bool, currentResType string) error {
 	type navState struct {
-		dir           string
-		entries       []DisplayEntry
-		isProjectRoot bool
-		colors        *ColorsConfig
-		editorCmd     string
+		dir            string
+		entries        []DisplayEntry
+		isProjectRoot  bool
+		currentResType string
+		colors         *ColorsConfig
+		editorCmd      string
 	}
 	var navStack []navState
 
@@ -550,8 +562,15 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		listHeader := " FILE LIST "
 		if isProjectRoot {
 			listHeader = " RESOURCES "
+		} else if currentResType == "calendar" {
+			listHeader = " DAYS "
 		}
+
 		prevHeader := " PREVIEW "
+		if currentResType == "calendar" {
+			prevHeader = " EVENTS "
+		}
+
 		if focusList {
 			listHeader = "[" + listHeader + "]"
 		} else {
@@ -651,7 +670,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		if len(entries) > 0 {
 			selected := entries[selectedIndex]
 			if selected.IsFile {
-				allPreviewLines = GetFilePreview(filepath.Join(baseDir, selected.RelPath), previewWidth)
+				fullPath := filepath.Join(baseDir, selected.RelPath)
+				if _, err := os.Stat(fullPath); err == nil {
+					allPreviewLines = GetFilePreview(fullPath, previewWidth)
+				} else {
+					allPreviewLines = []string{"[ Not yet implemented ]"}
+				}
 			} else if isProjectRoot {
 				resConfigPath := filepath.Join(baseDir, selected.RelPath, ".nocti.json")
 				data, err := os.ReadFile(resConfigPath)
@@ -1110,6 +1134,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				var files []string
 				if isProjectRoot {
 					files, _ = ScanProjectResources(baseDir, showHidden)
+				} else if currentResType == "calendar" {
+					files, _ = ScanCalendarDays(baseDir, showHidden)
 				} else {
 					files, _ = ScanNotebookFiles(baseDir, showHidden)
 				}
@@ -1131,6 +1157,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					baseDir = last.dir
 					entries = last.entries
 					isProjectRoot = last.isProjectRoot
+					currentResType = last.currentResType
 					colors = last.colors
 					editorCmd = last.editorCmd
 					showHidden = false // Reset hidden toggle when going back
@@ -1154,6 +1181,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					baseDir = last.dir
 					entries = last.entries
 					isProjectRoot = last.isProjectRoot
+					currentResType = last.currentResType
 					colors = last.colors
 					editorCmd = last.editorCmd
 					showHidden = false // Reset hidden toggle when going back
@@ -1181,22 +1209,31 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			if b[0] == '\r' || b[0] == '\n' {
 				if len(entries) > 0 {
 					selected := entries[selectedIndex]
-					if !selected.IsFile && selected.ResourceType == "notebook" {
+					if !selected.IsFile && (selected.ResourceType == "notebook" || selected.ResourceType == "calendar") {
 						// Push current state to stack
 						navStack = append(navStack, navState{
-							dir:           baseDir,
-							entries:       entries,
-							isProjectRoot: isProjectRoot,
-							colors:        colors,
-							editorCmd:     editorCmd,
+							dir:            baseDir,
+							entries:        entries,
+							isProjectRoot:  isProjectRoot,
+							currentResType: currentResType,
+							colors:         colors,
+							editorCmd:      editorCmd,
 						})
 
-						// Jump to notebook
+						// Jump to resource
 						newBaseDir := filepath.Join(baseDir, selected.RelPath)
-						showHidden = false // Reset hidden toggle when switching notebooks
-						newFiles, _ := ScanNotebookFiles(newBaseDir, showHidden)
+						showHidden = false // Reset hidden toggle
+						currentResType = selected.ResourceType
+
+						var newFiles []string
+						if currentResType == "calendar" {
+							newFiles, _ = ScanCalendarDays(newBaseDir, showHidden)
+						} else {
+							newFiles, _ = ScanNotebookFiles(newBaseDir, showHidden)
+						}
 						newEntries := BuildDisplayEntries(newFiles, newBaseDir, true)
-						// Refresh colors and editor for the new notebook
+
+						// Refresh colors and editor for the new resource
 						colors, editorCmd = loadColorsAndEditor(newBaseDir)
 
 						entries = newEntries
@@ -1207,6 +1244,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						focusList = true
 						continue
 					} else if selected.IsFile {
+
 						term.Restore(int(os.Stdin.Fd()), oldState)
 						fmt.Print(showCursor + exitAltScreen)
 

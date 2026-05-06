@@ -31,7 +31,7 @@ var RootCmd = &cobra.Command{
 
 			// Check if we are in a notebook context
 			_, resType, err := FindEnclosingResource()
-			if err == nil && resType == "notebook" {
+			if err == nil && (resType == "notebook" || resType == "calendar" || resType == "todo") {
 				return ListCmd.RunE(ListCmd, args)
 			}
 		}
