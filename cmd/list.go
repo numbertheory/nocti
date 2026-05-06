@@ -50,8 +50,10 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool) []Dis
 		depthOffset = 1
 		// Add the root resource itself
 		configPath := filepath.Join(baseDir, ".nocti.json")
+		projectConfigPath := filepath.Join(baseDir, ".nocti", "nocti.json")
 		name := filepath.Base(baseDir)
 		resType := "notebook"
+
 		if data, err := os.ReadFile(configPath); err == nil {
 			var config struct {
 				Name string `json:"name"`
@@ -64,6 +66,16 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool) []Dis
 				if config.Type != "" {
 					resType = config.Type
 				}
+			}
+		} else if data, err := os.ReadFile(projectConfigPath); err == nil {
+			var config struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(data, &config); err == nil {
+				if config.Name != "" {
+					name = config.Name
+				}
+				resType = "" // Special case for project root
 			}
 		}
 
@@ -222,7 +234,7 @@ var ListCmd = &cobra.Command{
 		var files []string
 		var err error
 		if isProjectRoot {
-			files, err = ScanProjectResources(searchDir)
+			files, err = ScanProjectResources(searchDir, false)
 		} else {
 			files, err = ScanNotebookFiles(searchDir, false)
 		}
@@ -252,7 +264,7 @@ var ListCmd = &cobra.Command{
 
 		colors, editorCmd := loadColorsAndEditor(searchDir)
 
-		entries := BuildDisplayEntries(files, searchDir, !isProjectRoot)
+		entries := BuildDisplayEntries(files, searchDir, true)
 		return runInteractiveList(entries, searchDir, colors, editorCmd, isProjectRoot)
 	},
 }
@@ -495,6 +507,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		iconNotebook = " "
 		iconCalendar = " "
 		iconTodo     = " "
+		iconProject  = " "
 	)
 
 	fmt.Print(enterAltScreen + hideCursor)
@@ -562,12 +575,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				if entry.IsFile {
 					if strings.HasSuffix(strings.ToLower(entry.Name), ".md") {
 						icon = iconMarkdown
-					} else if entry.Name == ".nocti.json" {
+					} else if entry.Name == ".nocti.json" || entry.Name == "nocti.json" {
 						icon = " " // Gear icon for settings
 					} else {
 						icon = iconText
 					}
 				} else {
+
 					switch entry.ResourceType {
 					case "notebook":
 						icon = iconNotebook
@@ -575,9 +589,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						icon = iconCalendar
 					case "todo":
 						icon = iconTodo
+					default:
+						if isProjectRoot && entry.RelPath == "." {
+							icon = iconProject
+						}
 					}
 				}
-
 				displayStr := fmt.Sprintf("%s%s%s", indent, icon, entry.Name)
 				if len(displayStr) > listWidth {
 					displayStr = displayStr[:listWidth-3] + "..."
@@ -631,7 +648,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		var allPreviewLines []string
 		if len(entries) > 0 {
 			selected := entries[selectedIndex]
-			if isProjectRoot {
+			if selected.IsFile {
+				allPreviewLines = GetFilePreview(filepath.Join(baseDir, selected.RelPath), previewWidth)
+			} else if isProjectRoot {
 				resConfigPath := filepath.Join(baseDir, selected.RelPath, ".nocti.json")
 				data, err := os.ReadFile(resConfigPath)
 				if err == nil {
@@ -655,10 +674,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						allPreviewLines = append(allPreviewLines, "[ Not yet implemented ]")
 					}
 				} else {
-					allPreviewLines = []string{"Error reading resource config"}
+					// Check if it's just a regular directory
+					if info, err := os.Stat(filepath.Join(baseDir, selected.RelPath)); err == nil && info.IsDir() {
+						allPreviewLines = []string{"Directory: " + selected.RelPath}
+					} else {
+						allPreviewLines = []string{"Error reading resource config"}
+					}
 				}
-			} else if selected.IsFile {
-				allPreviewLines = GetFilePreview(filepath.Join(baseDir, selected.RelPath), previewWidth)
 			} else {
 				allPreviewLines = []string{"Directory: " + selected.RelPath}
 			}
@@ -770,6 +792,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		if showCreateType {
 			modalWidth := 40
 			modalHeight := 11
+			if isProjectRoot {
+				modalHeight = 9
+			}
 			startX := (width - modalWidth) / 2
 			startY := (height - modalHeight) / 2
 
@@ -801,13 +826,18 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			fmt.Printf("\033[%d;%dH%s%s CREATE NEW %s", startY+1, startX+(modalWidth-12)/2, hBg, hFg+boldOn, reset)
 
 			options := []string{" File ", " Folder ", " Notebook ", " Calendar ", " Todo "}
+			displayIdx := 0
 			for i, opt := range options {
-				fmt.Printf("\033[%d;%dH", startY+3+i, startX+(modalWidth-len(opt))/2)
+				if isProjectRoot && i < 2 {
+					continue
+				}
+				fmt.Printf("\033[%d;%dH", startY+3+displayIdx, startX+(modalWidth-len(opt))/2)
 				if i == createTypeSelected {
 					fmt.Printf("%s%s%s", hBg+hFg+reverseOn, opt, reset+hBg+hFg)
 				} else {
 					fmt.Printf("%s%s%s", hBg, hFg+opt, reset)
 				}
+				displayIdx++
 			}
 			fmt.Printf("\033[%d;%dH%s%s ↑/↓ to select | ENTER to confirm %s", startY+modalHeight-2, startX+(modalWidth-32)/2, hBg, hFg, reset)
 		}
@@ -921,11 +951,11 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						// Refresh
 						var files []string
 						if isProjectRoot {
-							files, _ = ScanProjectResources(baseDir)
+							files, _ = ScanProjectResources(baseDir, showHidden)
 						} else {
 							files, _ = ScanNotebookFiles(baseDir, showHidden)
 						}
-						entries = BuildDisplayEntries(files, baseDir, !isProjectRoot)
+						entries = BuildDisplayEntries(files, baseDir, true)
 						// Reset selection to something reasonable if it changed
 						if selectedIndex >= len(entries) {
 							selectedIndex = len(entries) - 1
@@ -975,16 +1005,19 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 			// Priority 3: General Navigation
 			if b[0] == 20 { // Ctrl+T
-				if !isProjectRoot {
-					showHidden = !showHidden
-					files, _ := ScanNotebookFiles(baseDir, showHidden)
-					entries = BuildDisplayEntries(files, baseDir, !isProjectRoot)
-					if selectedIndex >= len(entries) {
-						selectedIndex = len(entries) - 1
-					}
-					if selectedIndex < 0 {
-						selectedIndex = 0
-					}
+				showHidden = !showHidden
+				var files []string
+				if isProjectRoot {
+					files, _ = ScanProjectResources(baseDir, showHidden)
+				} else {
+					files, _ = ScanNotebookFiles(baseDir, showHidden)
+				}
+				entries = BuildDisplayEntries(files, baseDir, true)
+				if selectedIndex >= len(entries) {
+					selectedIndex = len(entries) - 1
+				}
+				if selectedIndex < 0 {
+					selectedIndex = 0
 				}
 				continue
 			}
@@ -999,6 +1032,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					isProjectRoot = last.isProjectRoot
 					colors = last.colors
 					editorCmd = last.editorCmd
+					showHidden = false // Reset hidden toggle when going back
 					selectedIndex = 0
 					previewOffset = 0
 					focusList = true
@@ -1021,6 +1055,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					isProjectRoot = last.isProjectRoot
 					colors = last.colors
 					editorCmd = last.editorCmd
+					showHidden = false // Reset hidden toggle when going back
 					selectedIndex = 0
 					previewOffset = 0
 					focusList = true
@@ -1029,9 +1064,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				break
 			}
 
-			if !isProjectRoot && (b[0] == 'n' || b[0] == 'N') {
+			if b[0] == 'n' || b[0] == 'N' {
 				showCreateType = true
-				createTypeSelected = 0
+				if isProjectRoot {
+					createTypeSelected = 2 // Start at Notebook
+				} else {
+					createTypeSelected = 0 // Start at File
+				}
 				continue
 			}
 
@@ -1087,7 +1126,11 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			if showCreateType {
 				switch b[2] {
 				case 65: // Up
-					if createTypeSelected > 0 {
+					minIdx := 0
+					if isProjectRoot {
+						minIdx = 2
+					}
+					if createTypeSelected > minIdx {
 						createTypeSelected--
 					}
 				case 66: // Down

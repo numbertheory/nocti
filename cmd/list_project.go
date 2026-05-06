@@ -6,7 +6,7 @@ import (
 	"sort"
 )
 
-func ScanProjectResources(root string) ([]string, error) {
+func ScanProjectResources(root string, showHidden bool) ([]string, error) {
 	var resources []string
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -21,6 +21,14 @@ func ScanProjectResources(root string) ([]string, error) {
 			resources = append(resources, entry.Name()+string(os.PathSeparator))
 		}
 	}
+
+	if showHidden {
+		configPath := filepath.Join(".nocti", "nocti.json")
+		if _, err := os.Stat(filepath.Join(root, configPath)); err == nil {
+			resources = append(resources, configPath)
+		}
+	}
+
 	sort.Strings(resources)
 	return resources, nil
 }

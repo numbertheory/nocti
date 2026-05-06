@@ -9,6 +9,32 @@ import (
 	"testing"
 )
 
+func TestBuildDisplayEntriesWithProjectRoot(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "nocti-proj-root-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	os.Mkdir(filepath.Join(tmpDir, ".nocti"), 0755)
+	config := struct {
+		Name string `json:"name"`
+	}{Name: "My Project"}
+	data, _ := json.Marshal(config)
+	os.WriteFile(filepath.Join(tmpDir, ".nocti", "nocti.json"), data, 0644)
+
+	files := []string{"notebook1" + string(os.PathSeparator)}
+	entries := cmd.BuildDisplayEntries(files, tmpDir, true)
+
+	if len(entries) != 2 {
+		t.Fatalf("Expected 2 entries (project root + notebook), got %d", len(entries))
+	}
+
+	if entries[0].Name != "My Project" || entries[0].ResourceType != "" || entries[0].RelPath != "." {
+		t.Errorf("Project root entry incorrect: %+v", entries[0])
+	}
+}
+
 func TestBuildDisplayEntriesWithRoot(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "nocti-root-test-*")
 	if err != nil {
