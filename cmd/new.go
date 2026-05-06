@@ -130,7 +130,7 @@ func FindProjectRoot() (string, error) {
 var ResourceName string
 var Overwrite bool
 
-func CreateResource(resourceType string, targetDir string, providedName string, parentID string, parentName string) (string, error) {
+func CreateResource(resourceType string, targetDir string, providedName string, parentID string, parentName string, daysLength int) (string, error) {
 	root, err := FindProjectRoot()
 	if err != nil {
 		return "", err
@@ -170,6 +170,28 @@ func CreateResource(resourceType string, targetDir string, providedName string, 
 		}
 	}
 	name = strings.TrimSpace(name)
+
+	// If calendar and daysLength not provided, prompt for it
+	if resourceType == "calendar" && daysLength <= 0 {
+		var daysInput string
+		prompt := &survey.Input{
+			Message: "Enter number of days for calendar:",
+			Default: "30",
+		}
+		err := survey.AskOne(prompt, &daysInput)
+		if err != nil {
+			return "", err
+		}
+
+		if daysInput == "" {
+			daysLength = 30
+		} else {
+			fmt.Sscanf(daysInput, "%d", &daysLength)
+			if daysLength <= 0 {
+				daysLength = 30
+			}
+		}
+	}
 
 	// Read existing config
 	data, err := os.ReadFile(filename)
@@ -299,6 +321,10 @@ func CreateResource(resourceType string, targetDir string, providedName string, 
 		"editor":     editor,
 	}
 
+	if resourceType == "calendar" {
+		resInfo["daysLength"] = daysLength
+	}
+
 	if resourceType == "notebook" {
 		resInfo["colors"] = &ColorsConfig{
 			FileListBg:    "orange",
@@ -369,7 +395,7 @@ var newNotebookCmd = &cobra.Command{
 	Use:   "notebook",
 	Short: "Create a new notebook",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, err := CreateResource("notebook", ".", "", "", "")
+		_, err := CreateResource("notebook", ".", "", "", "", 0)
 		return err
 	},
 }
@@ -378,7 +404,7 @@ var newTodoCmd = &cobra.Command{
 	Use:   "todo",
 	Short: "Create a new todo list",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, err := CreateResource("todo", ".", "", "", "")
+		_, err := CreateResource("todo", ".", "", "", "", 0)
 		return err
 	},
 }
@@ -387,7 +413,7 @@ var newCalendarCmd = &cobra.Command{
 	Use:   "calendar",
 	Short: "Create a new calendar",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, err := CreateResource("calendar", ".", "", "", "")
+		_, err := CreateResource("calendar", ".", "", "", "", 0)
 		return err
 	},
 }

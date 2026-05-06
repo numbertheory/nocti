@@ -481,8 +481,10 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 	// Creation states
 	showCreateType := false
 	showCreateName := false
-	createTypeSelected := 0 // 0 = File, 1 = Folder
+	showCreateDays := false
+	createTypeSelected := 0 // 0 = File, 1 = Folder, 2 = Notebook, 3 = Calendar, 4 = Todo
 	createInputName := ""
+	createInputDays := ""
 
 	// ANSI escape codes
 	const (
@@ -888,7 +890,45 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			fmt.Printf("\033[%d;%dH%s%s NEW %s NAME %s", startY+1, startX+(modalWidth-len(typeStr)-10)/2, hBg, hFg+boldOn, typeStr, reset)
 
 			fmt.Printf("\033[%d;%dH%s%s > %s%s%s", startY+3, startX+4, hBg, hFg, reverseOn, createInputName, reset+hBg+hFg)
-			fmt.Printf("\033[%d;%dH%s%s ENTER to create | ESC to cancel %s", startY+6, startX+(modalWidth-28)/2, hBg, hFg, reset)
+			fmt.Printf("\033[%d;%dH%s%s ENTER to confirm | ESC to cancel %s", startY+6, startX+(modalWidth-28)/2, hBg, hFg, reset)
+		}
+
+		// 7.5 Create Days Modal (Calendar specific)
+		if showCreateDays {
+			modalWidth := 50
+			modalHeight := 8
+			startX := (width - modalWidth) / 2
+			startY := (height - modalHeight) / 2
+
+			// Resolve colors with specific defaults
+			hBg := "\033[44m"       // Default Blue
+			hFg := "\033[38;5;15m"  // Default White
+			hbBg := "\033[44m"      // Default Blue
+			hbFg := "\033[38;5;15m" // Default White
+
+			if colors != nil {
+				hBg = GetColorCode(colors.HelpBg, hBg)
+				hFg = GetFGColorCode(colors.HelpFg, hFg)
+				hbBg = GetColorCode(colors.HelpBorderBg, hbBg)
+				hbFg = GetFGColorCode(colors.HelpBorderFg, hbFg)
+			}
+
+			// Draw modal box background
+			for i := 0; i < modalHeight; i++ {
+				fmt.Printf("\033[%d;%dH%s%s%*s%s", startY+i, startX, hBg, hFg, modalWidth, "", reset)
+			}
+
+			// Draw Border
+			fmt.Printf("\033[%d;%dH%s%s┌%s┐%s", startY, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+			for i := 1; i < modalHeight-1; i++ {
+				fmt.Printf("\033[%d;%dH%s%s│\033[%d;%dH%s%s│%s", startY+i, startX, hbBg, hbFg, startY+i, startX+modalWidth-1, hbBg, hbFg, reset)
+			}
+			fmt.Printf("\033[%d;%dH%s%s└%s┘%s", startY+modalHeight-1, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+
+			fmt.Printf("\033[%d;%dH%s%s CALENDAR LENGTH (DAYS) %s", startY+1, startX+(modalWidth-24)/2, hBg, hFg+boldOn, reset)
+
+			fmt.Printf("\033[%d;%dH%s%s > %s%s%s", startY+3, startX+4, hBg, hFg, reverseOn, createInputDays, reset+hBg+hFg)
+			fmt.Printf("\033[%d;%dH%s%s ENTER to create (default 30) | ESC to cancel %s", startY+6, startX+(modalWidth-42)/2, hBg, hFg, reset)
 		}
 
 		// 8. Status bar
@@ -904,11 +944,18 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		}
 
 		if n == 1 {
-			// Priority 1: Text Input Modal (Naming)
+			// Priority 1: Text Input Modals (Naming, Days)
 			if showCreateName {
 				if b[0] == '\r' || b[0] == '\n' {
-					// Perform creation
 					if createInputName != "" {
+						if createTypeSelected == 3 { // Calendar
+							showCreateName = false
+							showCreateDays = true
+							createInputDays = "30"
+							continue
+						}
+
+						// Perform creation for other types
 						targetDir := baseDir
 						if len(entries) > 0 {
 							selected := entries[selectedIndex]
@@ -929,23 +976,18 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							os.WriteFile(filepath.Join(targetDir, newName), []byte(""), 0644)
 						case 1: // Folder
 							os.MkdirAll(filepath.Join(targetDir, newName), 0755)
-						case 2, 3, 4: // Notebook, Calendar, Todo
+						case 2, 4: // Notebook, Todo
 							resType := "notebook"
-							if createTypeSelected == 3 {
-								resType = "calendar"
-							} else if createTypeSelected == 4 {
+							if createTypeSelected == 4 {
 								resType = "todo"
 							}
-
-							// Find parent resource if targetDir is inside one
 							var parentID, parentName string
 							pConfig, err := FindEnclosingResourceIn(targetDir)
 							if err == nil {
 								parentID = pConfig.ID
 								parentName = pConfig.Name
 							}
-
-							CreateResource(resType, targetDir, newName, parentID, parentName)
+							CreateResource(resType, targetDir, newName, parentID, parentName, 0)
 						}
 
 						// Refresh
@@ -956,7 +998,6 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							files, _ = ScanNotebookFiles(baseDir, showHidden)
 						}
 						entries = BuildDisplayEntries(files, baseDir, true)
-						// Reset selection to something reasonable if it changed
 						if selectedIndex >= len(entries) {
 							selectedIndex = len(entries) - 1
 						}
@@ -978,7 +1019,67 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					createInputName += string(b[0])
 					continue
 				}
-				continue // Ignore other keys while naming
+				continue
+			}
+
+			if showCreateDays {
+				if b[0] == '\r' || b[0] == '\n' {
+					days := 30
+					if createInputDays != "" {
+						fmt.Sscanf(createInputDays, "%d", &days)
+						if days <= 0 {
+							days = 30
+						}
+					}
+
+					targetDir := baseDir
+					if len(entries) > 0 {
+						selected := entries[selectedIndex]
+						if selected.IsFile || selected.ResourceType == "calendar" || selected.ResourceType == "todo" {
+							targetDir = filepath.Join(baseDir, filepath.Dir(selected.RelPath))
+						} else {
+							targetDir = filepath.Join(baseDir, selected.RelPath)
+						}
+					}
+
+					var parentID, parentName string
+					pConfig, err := FindEnclosingResourceIn(targetDir)
+					if err == nil {
+						parentID = pConfig.ID
+						parentName = pConfig.Name
+					}
+
+					CreateResource("calendar", targetDir, createInputName, parentID, parentName, days)
+
+					// Refresh
+					var files []string
+					if isProjectRoot {
+						files, _ = ScanProjectResources(baseDir, showHidden)
+					} else {
+						files, _ = ScanNotebookFiles(baseDir, showHidden)
+					}
+					entries = BuildDisplayEntries(files, baseDir, true)
+					if selectedIndex >= len(entries) {
+						selectedIndex = len(entries) - 1
+					}
+					if selectedIndex < 0 {
+						selectedIndex = 0
+					}
+					showCreateDays = false
+					continue
+				} else if b[0] == 27 { // ESC
+					showCreateDays = false
+					continue
+				} else if b[0] == 127 || b[0] == 8 { // Backspace
+					if len(createInputDays) > 0 {
+						createInputDays = createInputDays[:len(createInputDays)-1]
+					}
+					continue
+				} else if b[0] >= '0' && b[0] <= '9' {
+					createInputDays += string(b[0])
+					continue
+				}
+				continue
 			}
 
 			// Priority 2: Selection Modals (Help, Type Selection)
