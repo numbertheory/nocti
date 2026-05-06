@@ -56,14 +56,16 @@ var InitCmd = &cobra.Command{
 		config := Config{
 			Name:    ProjectName,
 			Version: Version,
-			Editor:  "nano",
+			Editor:  "nvim",
 			Colors: &ColorsConfig{
-				FileList:     "blue",
-				PreviewPane:  "orange",
-				HelpBg:       "darkgray",
-				HelpFg:       "white",
-				HelpBorderBg: "black",
-				HelpBorderFg: "gray",
+				FileListBg:    "orange",
+				FileListFg:    "white",
+				PreviewPaneBg: "blue",
+				PreviewPaneFg: "white",
+				HelpBg:        "darkgray",
+				HelpFg:        "white",
+				HelpBorderBg:  "black",
+				HelpBorderFg:  "gray",
 			},
 		}
 

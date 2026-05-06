@@ -249,11 +249,11 @@ func TestColorHelpers(t *testing.T) {
 		helper   func(string, string) string
 		expected string
 	}{
-		{"blue", cmd.GetColorCode, "\033[48;5;4m"},
-		{"BLUE", cmd.GetColorCode, "\033[48;5;4m"},
+		{"blue", cmd.GetColorCode, "\033[44m"},
+		{"BLUE", cmd.GetColorCode, "\033[44m"},
 		{"unknown", cmd.GetColorCode, "default"},
-		{"red", cmd.GetFGColorCode, "\033[38;5;1m"},
-		{"RED", cmd.GetFGColorCode, "\033[38;5;1m"},
+		{"red", cmd.GetFGColorCode, "\033[31m"},
+		{"RED", cmd.GetFGColorCode, "\033[31m"},
 		{"unknown", cmd.GetFGColorCode, "default"},
 	}
 

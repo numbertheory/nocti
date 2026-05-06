@@ -11,8 +11,10 @@ Add an optional `colors` key at the top level of your `nocti.json` file:
   "name": "my-project",
   "version": "development",
   "colors": {
-    "file_list": "blue",
-    "preview_pane": "orange"
+    "file_list_bg": "blue",
+    "file_list_fg": "white",
+    "preview_pane_bg": "orange",
+    "preview_pane_fg": "white"
   },
   ...
 }

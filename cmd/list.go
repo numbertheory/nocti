@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,25 +21,6 @@ type DisplayEntry struct {
 	Depth        int
 	Name         string
 	ResourceType string // "notebook", "todo", "calendar", or empty for normal folder
-}
-
-func ScanProjectResources(root string) ([]string, error) {
-	var resources []string
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(root, entry.Name(), ".nocti.json")); err == nil {
-			resources = append(resources, entry.Name()+string(os.PathSeparator))
-		}
-	}
-	sort.Strings(resources)
-	return resources, nil
 }
 
 func BuildDisplayEntries(files []string, baseDir string, includeRoot bool) []DisplayEntry {
@@ -141,126 +120,6 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool) []Dis
 		}
 	}
 	return entries
-}
-
-func ScanNotebookFiles(searchDir string, showHidden bool) ([]string, error) {
-	var results []string
-	// Map to track folders that contain relevant files or are empty
-	// but we'll use a more direct approach by walking twice or tracking.
-	// Let's use a map to track which directories are "valid"
-	validDirs := make(map[string]bool)
-
-	// First pass: identify files and their parent directories
-	err := filepath.WalkDir(searchDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if path == searchDir {
-			return nil
-		}
-
-		if d.IsDir() {
-			if strings.HasPrefix(d.Name(), ".") {
-				if !showHidden || d.Name() != ".templates" {
-					return filepath.SkipDir
-				}
-			}
-
-			// Check if this is a sub-resource
-			configPath := filepath.Join(path, ".nocti.json")
-			if _, err := os.Stat(configPath); err == nil {
-				if path != searchDir {
-					// Read resource type
-					data, err := os.ReadFile(configPath)
-					if err == nil {
-						var config struct {
-							Type string `json:"type"`
-						}
-						if err := json.Unmarshal(data, &config); err == nil {
-							if config.Type == "notebook" {
-								// Recurse into nested notebooks
-								validDirs[path] = true
-								return nil
-							} else {
-
-								// For other resources, show them but don't recurse
-								relPath, err := filepath.Rel(searchDir, path)
-								if err == nil {
-									results = append(results, relPath+string(os.PathSeparator))
-								}
-								return filepath.SkipDir
-							}
-						}
-					}
-					// If we can't read/parse it, default to skipping
-					return filepath.SkipDir
-				}
-			}
-
-			// Check if folder is empty
-			entries, err := os.ReadDir(path)
-			if err == nil && len(entries) == 0 {
-				validDirs[path] = true
-			}
-			return nil
-		}
-
-		if showHidden && d.Name() == ".nocti.json" {
-			relPath, err := filepath.Rel(searchDir, path)
-			if err == nil {
-				results = append(results, relPath)
-			}
-			return nil
-		}
-
-		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".md" || ext == ".txt" {
-			relPath, err := filepath.Rel(searchDir, path)
-			if err == nil {
-				results = append(results, relPath)
-				// Mark all parents as valid
-				parent := filepath.Dir(path)
-				for parent != searchDir && parent != "." {
-					validDirs[parent] = true
-					parent = filepath.Dir(parent)
-				}
-			}
-		}
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	// Add valid empty folders or folders containing valid files to results
-	// results already contains the files. We need to make sure BuildDisplayEntries
-	// handles the folder structure correctly.
-	// Actually, BuildDisplayEntries reconstructs the tree from file paths.
-	// If a folder is empty, it won't have a file path to trigger its creation.
-	// So we add "dummy" entries for empty folders.
-
-	for dir := range validDirs {
-		relDir, err := filepath.Rel(searchDir, dir)
-		if err == nil {
-			// Check if this dir is already represented by a file
-			found := false
-			for _, f := range results {
-				if strings.HasPrefix(f, relDir+string(os.PathSeparator)) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				// Add the directory itself as a result
-				// We'll append a trailing separator to distinguish it if needed,
-				// but BuildDisplayEntries should handle it if we are careful.
-				results = append(results, relDir+string(os.PathSeparator))
-			}
-		}
-	}
-
-	return results, nil
 }
 
 func loadColorsAndEditor(searchDir string) (*ColorsConfig, string) {
@@ -471,25 +330,25 @@ func GetFGColorCode(colorName string, defaultCode string) string {
 		return "\033[39m" // Reset foreground
 	}
 	colors := map[string]string{
-		"black":         "\033[38;5;0m",
-		"red":           "\033[38;5;1m",
-		"green":         "\033[38;5;2m",
-		"yellow":        "\033[38;5;3m",
-		"blue":          "\033[38;5;4m",
-		"magenta":       "\033[38;5;5m",
-		"cyan":          "\033[38;5;6m",
-		"white":         "\033[38;5;7m",
+		"black":         "\033[30m",
+		"red":           "\033[31m",
+		"green":         "\033[32m",
+		"yellow":        "\033[33m",
+		"blue":          "\033[34m",
+		"magenta":       "\033[35m",
+		"cyan":          "\033[36m",
+		"white":         "\033[37m",
 		"gray":          "\033[38;5;244m",
 		"darkgray":      "\033[38;5;236m",
 		"lightgray":     "\033[38;5;250m",
 		"silver":        "\033[38;5;7m",
-		"brightred":     "\033[38;5;9m",
-		"brightgreen":   "\033[38;5;10m",
-		"brightyellow":  "\033[38;5;11m",
-		"brightblue":    "\033[38;5;12m",
-		"brightmagenta": "\033[38;5;13m",
-		"brightcyan":    "\033[38;5;14m",
-		"brightwhite":   "\033[38;5;15m",
+		"brightred":     "\033[91m",
+		"brightgreen":   "\033[92m",
+		"brightyellow":  "\033[93m",
+		"brightblue":    "\033[94m",
+		"brightmagenta": "\033[95m",
+		"brightcyan":    "\033[96m",
+		"brightwhite":   "\033[97m",
 		"orange":        "\033[38;5;208m",
 		"darkorange":    "\033[38;5;166m",
 		"pink":          "\033[38;5;205m",
@@ -525,25 +384,25 @@ func GetColorCode(colorName string, defaultCode string) string {
 		return "\033[49m" // Reset background
 	}
 	colors := map[string]string{
-		"black":         "\033[48;5;0m",
-		"red":           "\033[48;5;1m",
-		"green":         "\033[48;5;2m",
-		"yellow":        "\033[48;5;3m",
-		"blue":          "\033[48;5;4m",
-		"magenta":       "\033[48;5;5m",
-		"cyan":          "\033[48;5;6m",
-		"white":         "\033[48;5;7m",
+		"black":         "\033[40m",
+		"red":           "\033[41m",
+		"green":         "\033[42m",
+		"yellow":        "\033[43m",
+		"blue":          "\033[44m",
+		"magenta":       "\033[45m",
+		"cyan":          "\033[46m",
+		"white":         "\033[47m",
 		"gray":          "\033[48;5;244m",
 		"darkgray":      "\033[48;5;236m",
 		"lightgray":     "\033[48;5;250m",
 		"silver":        "\033[48;5;7m",
-		"brightred":     "\033[48;5;9m",
-		"brightgreen":   "\033[48;5;10m",
-		"brightyellow":  "\033[48;5;11m",
-		"brightblue":    "\033[48;5;12m",
-		"brightmagenta": "\033[48;5;13m",
-		"brightcyan":    "\033[48;5;14m",
-		"brightwhite":   "\033[48;5;15m",
+		"brightred":     "\033[101m",
+		"brightgreen":   "\033[102m",
+		"brightyellow":  "\033[103m",
+		"brightblue":    "\033[104m",
+		"brightmagenta": "\033[105m",
+		"brightcyan":    "\033[106m",
+		"brightwhite":   "\033[107m",
 		"orange":        "\033[48;5;208m",
 		"darkorange":    "\033[48;5;166m",
 		"pink":          "\033[48;5;205m",
@@ -661,11 +520,15 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		previewWidth := width - listWidth - 5 // -3 for separator, -1 for margin, -1 for scrollbar
 
 		// 1. Draw Header Bar
-		listColor := "\033[44m"       // Default Blue
-		prevColor := "\033[48;5;208m" // Default Orange
+		listBg := "\033[48;5;208m" // Default Orange
+		listFg := "\033[38;5;15m"  // Default White
+		prevBg := "\033[44m"       // Default Blue
+		prevFg := "\033[38;5;15m"  // Default White
 		if colors != nil {
-			listColor = GetColorCode(colors.FileList, listColor)
-			prevColor = GetColorCode(colors.PreviewPane, prevColor)
+			listBg = GetColorCode(colors.FileListBg, listBg)
+			listFg = GetFGColorCode(colors.FileListFg, listFg)
+			prevBg = GetColorCode(colors.PreviewPaneBg, prevBg)
+			prevFg = GetFGColorCode(colors.PreviewPaneFg, prevFg)
 		}
 
 		fmt.Printf("\033[1;1H")
@@ -681,11 +544,11 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		}
 
 		// Draw File List Header (filled to listWidth)
-		fmt.Printf("%s%-*s%s", listColor, listWidth, listHeader, reset)
+		fmt.Printf("%s%s%-*s%s", listBg, listFg, listWidth, listHeader, reset)
 		// Vertical separator in header row
 		fmt.Printf(" │ ")
 		// Draw Preview Header (filled to remaining width)
-		fmt.Printf("%s%-*s%s", prevColor, width-listWidth-3, prevHeader, reset)
+		fmt.Printf("%s%s%-*s%s", prevBg, prevFg, width-listWidth-3, prevHeader, reset)
 
 		// 2. Draw List Content
 		for i := 0; i < contentHeight; i++ {
@@ -1275,25 +1138,6 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 	}
 
 	return nil
-}
-
-func GetFilePreview(path string, width int) []string {
-	file, err := os.Open(path)
-	if err != nil {
-		return []string{"Error opening file"}
-	}
-	defer file.Close()
-
-	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if len(line) > width {
-			line = line[:width]
-		}
-		lines = append(lines, line)
-	}
-	return lines
 }
 
 func init() {

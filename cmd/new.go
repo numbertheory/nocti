@@ -37,18 +37,20 @@ type Todo Resource
 type Calendar Resource
 
 type ColorsConfig struct {
-	FileList     string `json:"file_list,omitempty"`
-	PreviewPane  string `json:"preview_pane,omitempty"`
-	HelpBg       string `json:"help_bg,omitempty"`
-	HelpFg       string `json:"help_fg,omitempty"`
-	HelpBorderBg string `json:"help_border_bg,omitempty"`
-	HelpBorderFg string `json:"help_border_fg,omitempty"`
-	NotebookFg   string `json:"nocti_notebook_fg,omitempty"`
-	NotebookBg   string `json:"nocti_notebook_bg,omitempty"`
-	CalendarFg   string `json:"nocti_calendar_fg,omitempty"`
-	CalendarBg   string `json:"nocti_calendar_bg,omitempty"`
-	TodoFg       string `json:"nocti_todo_fg,omitempty"`
-	TodoBg       string `json:"nocti_todo_bg,omitempty"`
+	FileListBg    string `json:"file_list_bg,omitempty"`
+	FileListFg    string `json:"file_list_fg,omitempty"`
+	PreviewPaneBg string `json:"preview_pane_bg,omitempty"`
+	PreviewPaneFg string `json:"preview_pane_fg,omitempty"`
+	HelpBg        string `json:"help_bg,omitempty"`
+	HelpFg        string `json:"help_fg,omitempty"`
+	HelpBorderBg  string `json:"help_border_bg,omitempty"`
+	HelpBorderFg  string `json:"help_border_fg,omitempty"`
+	NotebookFg    string `json:"nocti_notebook_fg,omitempty"`
+	NotebookBg    string `json:"nocti_notebook_bg,omitempty"`
+	CalendarFg    string `json:"nocti_calendar_fg,omitempty"`
+	CalendarBg    string `json:"nocti_calendar_bg,omitempty"`
+	TodoFg        string `json:"nocti_todo_fg,omitempty"`
+	TodoBg        string `json:"nocti_todo_bg,omitempty"`
 }
 
 // FullConfig to include all resource types
@@ -299,12 +301,14 @@ func CreateResource(resourceType string, targetDir string, providedName string, 
 
 	if resourceType == "notebook" {
 		resInfo["colors"] = &ColorsConfig{
-			FileList:     "blue",
-			PreviewPane:  "orange",
-			HelpBg:       "darkgray",
-			HelpFg:       "white",
-			HelpBorderBg: "black",
-			HelpBorderFg: "gray",
+			FileListBg:    "orange",
+			FileListFg:    "white",
+			PreviewPaneBg: "blue",
+			PreviewPaneFg: "white",
+			HelpBg:        "darkgray",
+			HelpFg:        "white",
+			HelpBorderBg:  "black",
+			HelpBorderFg:  "gray",
 		}
 	}
 

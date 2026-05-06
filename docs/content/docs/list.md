@@ -27,8 +27,10 @@ The interactive TUI can be customized via the `colors` key in your `.nocti/nocti
 
 ### Available Color Keys
 
-*   `file_list`: Background color for the file list header.
-*   `preview_pane`: Background color for the preview pane header.
+*   `file_list_bg`: Background color for the file list header.
+*   `file_list_fg`: Foreground color for the file list header.
+*   `preview_pane_bg`: Background color for the preview pane header.
+*   `preview_pane_fg`: Foreground color for the preview pane header.
 *   `help_bg`: Background color of the help modal.
 *   `help_fg`: Foreground (text) color of the help modal.
 *   `help_border_bg`: Background color for the help modal border.
@@ -45,8 +47,10 @@ The interactive TUI can be customized via the `colors` key in your `.nocti/nocti
 ```json
 {
   "colors": {
-    "file_list": "blue",
-    "preview_pane": "orange",
+    "file_list_bg": "blue",
+    "file_list_fg": "white",
+    "preview_pane_bg": "orange",
+    "preview_pane_fg": "white"
     "help_bg": "darkgray",
     "help_fg": "white",
     "help_border_bg": "black",
