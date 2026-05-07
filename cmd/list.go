@@ -108,8 +108,8 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipS
 		// and this entry is NOT a sub-resource, add the root now.
 		if includeRoot && parentResType == "calendar" && !rootAdded {
 			resType := getResourceType(cleanPath)
-			// A calendar "day" is not a directory with .nocti.json, and it's not .nocti.json itself
-			if resType == "" && f != ".nocti.json" {
+			// A calendar "day" is not a directory with .nocti.json, or it's the .nocti.json itself
+			if resType == "" || f == ".nocti.json" {
 				addRootEntry()
 				rootAdded = true
 			}

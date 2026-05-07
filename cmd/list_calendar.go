@@ -77,14 +77,16 @@ func ScanCalendarDays(searchDir string, showHidden bool) ([]string, error) {
 
 	if config.ResourcesFirst {
 		results = append(results, subResources...)
+		if showHidden {
+			results = append(results, ".nocti.json")
+		}
 		results = append(results, days...)
 	} else {
+		if showHidden {
+			results = append(results, ".nocti.json")
+		}
 		results = append(results, days...)
 		results = append(results, subResources...)
-	}
-
-	if showHidden {
-		results = append([]string{".nocti.json"}, results...)
 	}
 
 	return results, nil
