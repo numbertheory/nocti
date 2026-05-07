@@ -682,6 +682,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				fullPath := filepath.Join(baseDir, selected.RelPath)
 				if _, err := os.Stat(fullPath); err == nil {
 					allPreviewLines = GetFilePreview(fullPath, previewWidth)
+				} else if currentResType == "calendar" {
+					allPreviewLines = GetCalendarDayPreview(selected.RelPath, baseDir)
 				} else {
 					allPreviewLines = []string{"[ Not yet implemented ]"}
 				}
