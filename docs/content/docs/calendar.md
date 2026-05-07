@@ -36,10 +36,9 @@ Dates that are recognized as holidays are automatically highlighted in the list 
 ### Customization
 You can customize the appearance of holidays and the calendar range by editing the `.nocti.json` file within the calendar resource.
 
-#### Color Options
-Add these keys to the `colors` object in `.nocti.json`:
-- `calendar_holiday_fg`: The foreground color for holiday dates (e.g., "gold", "red", "brightyellow").
-- `calendar_holiday_bg`: The background color for holiday dates.
+#### Other Configuration Options
+- `daysLength`: The number of days to show before and after the creation date (default is 30).
+- `resources_first`: If set to `true`, nested nocti resources will be listed before the calendar heading and its days. By default, the calendar heading and days appear first.
 
 Example `.nocti.json` configuration:
 ```json
@@ -47,6 +46,7 @@ Example `.nocti.json` configuration:
   "name": "My Calendar",
   "type": "calendar",
   "daysLength": 30,
+  "resources_first": true,
   "colors": {
     "calendar_holiday_fg": "hotpink",
     "calendar_holiday_bg": "default"

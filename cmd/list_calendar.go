@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 )
 
@@ -19,8 +20,9 @@ func ScanCalendarDays(searchDir string, showHidden bool) ([]string, error) {
 	}
 
 	var config struct {
-		DaysLength int    `json:"daysLength"`
-		CreatedAt  string `json:"created_at"`
+		DaysLength     int    `json:"daysLength"`
+		CreatedAt      string `json:"created_at"`
+		ResourcesFirst bool   `json:"resources_first"`
 	}
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse calendar config: %w", err)
@@ -42,6 +44,7 @@ func ScanCalendarDays(searchDir string, showHidden bool) ([]string, error) {
 
 	multiYear := startDate.Year() != endDate.Year()
 
+	var days []string
 	currentYear := -1
 	for i := -config.DaysLength; i <= config.DaysLength; i++ {
 		day := centerDate.AddDate(0, 0, i)
@@ -49,13 +52,35 @@ func ScanCalendarDays(searchDir string, showHidden bool) ([]string, error) {
 		if multiYear {
 			if day.Year() != currentYear {
 				currentYear = day.Year()
-				results = append(results, fmt.Sprintf("%d%c", currentYear, os.PathSeparator))
+				days = append(days, fmt.Sprintf("%d%c", currentYear, os.PathSeparator))
 			}
 			// Indent days under year folders
-			results = append(results, fmt.Sprintf("%d%c%s %d", day.Year(), os.PathSeparator, day.Month().String(), day.Day()))
+			days = append(days, fmt.Sprintf("%d%c%s %d", day.Year(), os.PathSeparator, day.Month().String(), day.Day()))
 		} else {
-			results = append(results, fmt.Sprintf("%s %d", day.Month().String(), day.Day()))
+			days = append(days, fmt.Sprintf("%s %d", day.Month().String(), day.Day()))
 		}
+	}
+
+	// Scan for nested resources (folders with .nocti.json)
+	var subResources []string
+	entries, err := os.ReadDir(searchDir)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				if _, err := os.Stat(filepath.Join(searchDir, entry.Name(), ".nocti.json")); err == nil {
+					subResources = append(subResources, entry.Name()+string(os.PathSeparator))
+				}
+			}
+		}
+		sort.Strings(subResources)
+	}
+
+	if config.ResourcesFirst {
+		results = append(results, subResources...)
+		results = append(results, days...)
+	} else {
+		results = append(results, days...)
+		results = append(results, subResources...)
 	}
 
 	if showHidden {

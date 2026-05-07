@@ -23,7 +23,7 @@ type DisplayEntry struct {
 	ResourceType string // "notebook", "todo", "calendar", or empty for normal folder
 }
 
-func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipSort bool) []DisplayEntry {
+func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipSort bool, parentResType string) []DisplayEntry {
 	var entries []DisplayEntry
 	seenDirs := make(map[string]bool)
 
@@ -47,9 +47,7 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipS
 		return config.Type
 	}
 
-	depthOffset := 0
-	if includeRoot {
-		depthOffset = 1
+	addRootEntry := func() {
 		// Add the root resource itself
 		configPath := filepath.Join(baseDir, ".nocti.json")
 		projectConfigPath := filepath.Join(baseDir, ".nocti", "nocti.json")
@@ -90,21 +88,49 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipS
 		})
 	}
 
+	depthOffset := 0
+	if includeRoot {
+		depthOffset = 1
+	}
+
+	rootAdded := false
+	if includeRoot && parentResType != "calendar" {
+		addRootEntry()
+		rootAdded = true
+	}
+
 	for _, f := range files {
 		isDirOnly := strings.HasSuffix(f, string(os.PathSeparator))
 		cleanPath := strings.TrimSuffix(f, string(os.PathSeparator))
 		parts := strings.Split(cleanPath, string(os.PathSeparator))
 
+		// If this is a calendar, and we haven't added the root yet,
+		// and this entry is NOT a sub-resource, add the root now.
+		if includeRoot && parentResType == "calendar" && !rootAdded {
+			resType := getResourceType(cleanPath)
+			// A calendar "day" is not a directory with .nocti.json, and it's not .nocti.json itself
+			if resType == "" && f != ".nocti.json" {
+				addRootEntry()
+				rootAdded = true
+			}
+		}
+
 		// Process parent directories
 		for i := 0; i < len(parts)-1; i++ {
 			dirPath := filepath.Join(parts[:i+1]...)
 			if !seenDirs[dirPath] {
+				depth := i + depthOffset
+				resType := getResourceType(dirPath)
+				if parentResType == "calendar" && resType != "" && i == 0 {
+					depth = 0
+				}
+
 				entries = append(entries, DisplayEntry{
 					RelPath:      dirPath,
 					IsFile:       false,
-					Depth:        i + depthOffset,
+					Depth:        depth,
 					Name:         parts[i],
-					ResourceType: getResourceType(dirPath),
+					ResourceType: resType,
 				})
 				seenDirs[dirPath] = true
 			}
@@ -114,25 +140,43 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipS
 			// Process the empty folder itself
 			dirPath := cleanPath
 			if !seenDirs[dirPath] {
+				depth := len(parts) - 1 + depthOffset
+				resType := getResourceType(dirPath)
+				if parentResType == "calendar" && resType != "" && len(parts) == 1 {
+					depth = 0
+				}
+
 				entries = append(entries, DisplayEntry{
 					RelPath:      dirPath,
 					IsFile:       false,
-					Depth:        len(parts) - 1 + depthOffset,
+					Depth:        depth,
 					Name:         parts[len(parts)-1],
-					ResourceType: getResourceType(dirPath),
+					ResourceType: resType,
 				})
 				seenDirs[dirPath] = true
 			}
 		} else {
 			// Process the file itself
+			depth := len(parts) - 1 + depthOffset
+			if parentResType == "calendar" && len(parts) == 1 && getResourceType(cleanPath) != "" {
+				// This shouldn't really happen for files in a calendar but for robustness:
+				depth = 0
+			}
+
 			entries = append(entries, DisplayEntry{
 				RelPath: f,
 				IsFile:  true,
-				Depth:   len(parts) - 1 + depthOffset,
+				Depth:   depth,
 				Name:    parts[len(parts)-1],
 			})
 		}
 	}
+
+	// If root was never added (e.g. no days, only resources first), add it at the end
+	if includeRoot && !rootAdded {
+		addRootEntry()
+	}
+
 	return entries
 }
 
@@ -277,7 +321,7 @@ var ListCmd = &cobra.Command{
 
 		colors, editorCmd := loadColorsAndEditor(searchDir)
 
-		entries := BuildDisplayEntries(files, searchDir, true, currentResType == "calendar")
+		entries := BuildDisplayEntries(files, searchDir, true, currentResType == "calendar", currentResType)
 		return runInteractiveList(entries, searchDir, colors, editorCmd, isProjectRoot, currentResType)
 	},
 }
@@ -695,7 +739,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				} else {
 					allPreviewLines = []string{"[ Not yet implemented ]"}
 				}
-			} else if isProjectRoot {
+			} else if isProjectRoot || currentResType == "calendar" {
 				resConfigPath := filepath.Join(baseDir, selected.RelPath, ".nocti.json")
 				data, err := os.ReadFile(resConfigPath)
 				if err == nil {
@@ -839,7 +883,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		if showCreateType {
 			modalWidth := 40
 			modalHeight := 11
-			if isProjectRoot {
+			if isProjectRoot || currentResType == "calendar" {
 				modalHeight = 9
 			}
 			startX := (width - modalWidth) / 2
@@ -875,7 +919,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			options := []string{" File ", " Folder ", " Notebook ", " Calendar ", " Todo "}
 			displayIdx := 0
 			for i, opt := range options {
-				if isProjectRoot && i < 2 {
+				if (isProjectRoot || currentResType == "calendar") && i < 2 {
 					continue
 				}
 				fmt.Printf("\033[%d;%dH", startY+3+displayIdx, startX+(modalWidth-len(opt))/2)
@@ -1002,7 +1046,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 						// Perform creation for other types
 						targetDir := baseDir
-						if len(entries) > 0 {
+						if currentResType != "calendar" && len(entries) > 0 {
 							selected := entries[selectedIndex]
 							if selected.IsFile || selected.ResourceType == "calendar" || selected.ResourceType == "todo" {
 								targetDir = filepath.Join(baseDir, filepath.Dir(selected.RelPath))
@@ -1039,10 +1083,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						var files []string
 						if isProjectRoot {
 							files, _ = ScanProjectResources(baseDir, showHidden)
+						} else if currentResType == "calendar" {
+							files, _ = ScanCalendarDays(baseDir, showHidden)
 						} else {
 							files, _ = ScanNotebookFiles(baseDir, showHidden)
 						}
-						entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar")
+						entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar", currentResType)
 						if selectedIndex >= len(entries) {
 							selectedIndex = len(entries) - 1
 						}
@@ -1078,7 +1124,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					}
 
 					targetDir := baseDir
-					if len(entries) > 0 {
+					if currentResType != "calendar" && len(entries) > 0 {
 						selected := entries[selectedIndex]
 						if selected.IsFile || selected.ResourceType == "calendar" || selected.ResourceType == "todo" {
 							targetDir = filepath.Join(baseDir, filepath.Dir(selected.RelPath))
@@ -1100,10 +1146,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					var files []string
 					if isProjectRoot {
 						files, _ = ScanProjectResources(baseDir, showHidden)
+					} else if currentResType == "calendar" {
+						files, _ = ScanCalendarDays(baseDir, showHidden)
 					} else {
 						files, _ = ScanNotebookFiles(baseDir, showHidden)
 					}
-					entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar")
+					entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar", currentResType)
 					if selectedIndex >= len(entries) {
 						selectedIndex = len(entries) - 1
 					}
@@ -1160,7 +1208,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				} else {
 					files, _ = ScanNotebookFiles(baseDir, showHidden)
 				}
-				entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar")
+				entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar", currentResType)
 				if selectedIndex >= len(entries) {
 					selectedIndex = len(entries) - 1
 				}
@@ -1215,11 +1263,30 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			}
 
 			if b[0] == 'n' || b[0] == 'N' {
-				showCreateType = true
-				if isProjectRoot {
+				if currentResType == "calendar" {
+					if len(entries) > 0 {
+						selected := entries[selectedIndex]
+						// If it's a "day" (IsFile but not real file) or .nocti.json, don't allow creation
+						fullPath := filepath.Join(baseDir, selected.RelPath)
+						if selected.IsFile {
+							if _, err := os.Stat(fullPath); err != nil {
+								// It's a virtual day
+								continue
+							}
+							if selected.Name == ".nocti.json" || selected.Name == "nocti.json" {
+								continue
+							}
+						}
+					}
+					showCreateType = true
 					createTypeSelected = 2 // Start at Notebook
 				} else {
-					createTypeSelected = 0 // Start at File
+					showCreateType = true
+					if isProjectRoot {
+						createTypeSelected = 2 // Start at Notebook
+					} else {
+						createTypeSelected = 0 // Start at File
+					}
 				}
 				continue
 			}
@@ -1252,7 +1319,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						} else {
 							newFiles, _ = ScanNotebookFiles(newBaseDir, showHidden)
 						}
-						newEntries := BuildDisplayEntries(newFiles, newBaseDir, true, currentResType == "calendar")
+						newEntries := BuildDisplayEntries(newFiles, newBaseDir, true, currentResType == "calendar", currentResType)
 
 						// Refresh colors and editor for the new resource
 						colors, editorCmd = loadColorsAndEditor(newBaseDir)
@@ -1296,17 +1363,17 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			isEnd := b[2] == 70 || (n >= 4 && b[2] == 52 && b[3] == 126)
 			isUp := b[2] == 65
 			isDown := b[2] == 66
-
 			if showCreateType {
-				if isUp {
+				switch b[2] {
+				case 65: // Up
 					minIdx := 0
-					if isProjectRoot {
+					if isProjectRoot || currentResType == "calendar" {
 						minIdx = 2
 					}
 					if createTypeSelected > minIdx {
 						createTypeSelected--
 					}
-				} else if isDown {
+				case 66: // Down
 					if createTypeSelected < 4 {
 						createTypeSelected++
 					}

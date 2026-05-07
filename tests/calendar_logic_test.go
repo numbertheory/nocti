@@ -91,16 +91,51 @@ func TestScanCalendarDaysMultiYear(t *testing.T) {
 	}
 
 	// Verify BuildDisplayEntries preserves order and creates structure
-	entries := cmd.BuildDisplayEntries(days, tmpDir, false, true)
+	entries := cmd.BuildDisplayEntries(days, tmpDir, false, true, "calendar")
 	if len(entries) != 5 {
 		t.Fatalf("Expected 5 entries from BuildDisplayEntries, got %d", len(entries))
 	}
 
-	if entries[0].Name != "2023" || entries[0].IsFile {
-		t.Errorf("Expected 2023 folder, got %+v", entries[0])
+	if entries[0].Name != "2023" || entries[0].IsFile || entries[0].Depth != 0 {
+		t.Errorf("Expected 2023 folder at depth 0, got %+v", entries[0])
 	}
-	if entries[1].Name != "December 31" || !entries[1].IsFile {
-		t.Errorf("Expected December 31 file, got %+v", entries[1])
+	if entries[1].Name != "December 31" || !entries[1].IsFile || entries[1].Depth != 1 {
+		t.Errorf("Expected December 31 file at depth 1, got %+v", entries[1])
+	}
+}
+
+func TestScanCalendarDaysWithNestedResourcesIndentation(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "nocti-calendar-indent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	config := `{"type":"calendar", "daysLength": 1}`
+	os.WriteFile(filepath.Join(tmpDir, ".nocti.json"), []byte(config), 0644)
+
+	// Create a nested notebook
+	os.Mkdir(filepath.Join(tmpDir, "sub-notebook"), 0755)
+	os.WriteFile(filepath.Join(tmpDir, "sub-notebook", ".nocti.json"), []byte(`{"type":"notebook"}`), 0644)
+
+	days, err := cmd.ScanCalendarDays(tmpDir, false)
+	if err != nil {
+		t.Fatalf("ScanCalendarDays failed: %v", err)
+	}
+
+	entries := cmd.BuildDisplayEntries(days, tmpDir, true, true, "calendar")
+
+	foundSub := false
+	for _, e := range entries {
+		if e.Name == "sub-notebook" {
+			foundSub = true
+			if e.Depth != 0 {
+				t.Errorf("Nested notebook should be at depth 0, got %d", e.Depth)
+			}
+		}
+	}
+	if !foundSub {
+		t.Error("sub-notebook not found in entries")
 	}
 }
 
@@ -124,5 +159,36 @@ func TestScanCalendarDaysDefaultLength(t *testing.T) {
 	// But let's just check length.
 	if len(days) < 61 {
 		t.Fatalf("Expected at least 61 entries, got %d", len(days))
+	}
+}
+
+func TestScanCalendarDaysWithNestedResources(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "nocti-calendar-nested-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	config := `{"type":"calendar", "daysLength": 1}`
+	os.WriteFile(filepath.Join(tmpDir, ".nocti.json"), []byte(config), 0644)
+
+	// Create a nested notebook
+	os.Mkdir(filepath.Join(tmpDir, "sub-notebook"), 0755)
+	os.WriteFile(filepath.Join(tmpDir, "sub-notebook", ".nocti.json"), []byte(`{"type":"notebook"}`), 0644)
+
+	days, err := cmd.ScanCalendarDays(tmpDir, false)
+	if err != nil {
+		t.Fatalf("ScanCalendarDays failed: %v", err)
+	}
+
+	foundSub := false
+	for _, d := range days {
+		if d == "sub-notebook"+string(os.PathSeparator) {
+			foundSub = true
+		}
+	}
+
+	if !foundSub {
+		t.Error("Nested resource 'sub-notebook' not found in calendar listing")
 	}
 }
