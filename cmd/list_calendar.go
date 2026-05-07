@@ -59,7 +59,7 @@ func ScanCalendarDays(searchDir string, showHidden bool) ([]string, error) {
 	}
 
 	if showHidden {
-		results = append(results, ".nocti.json")
+		results = append([]string{".nocti.json"}, results...)
 	}
 
 	return results, nil
