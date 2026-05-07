@@ -28,6 +28,32 @@ When you select a day in the calendar, the preview pane displays a detailed info
 - **Day of Week:** Shows the full name of the weekday.
 - **Holidays:** Automatically identifies US Federal Holidays.
 
+### Holiday Highlighting
+Dates that are recognized as holidays are automatically highlighted in the list view to make them stand out.
+- **Default Style:** Holidays are displayed with a **gold** foreground.
+- **Dynamic Preview:** The "Holidays" field only appears in the information panel when a holiday is actually present for the selected day.
+
+### Customization
+You can customize the appearance of holidays and the calendar range by editing the `.nocti.json` file within the calendar resource.
+
+#### Color Options
+Add these keys to the `colors` object in `.nocti.json`:
+- `calendar_holiday_fg`: The foreground color for holiday dates (e.g., "gold", "red", "brightyellow").
+- `calendar_holiday_bg`: The background color for holiday dates.
+
+Example `.nocti.json` configuration:
+```json
+{
+  "name": "My Calendar",
+  "type": "calendar",
+  "daysLength": 30,
+  "colors": {
+    "calendar_holiday_fg": "hotpink",
+    "calendar_holiday_bg": "default"
+  }
+}
+```
+
 ### Navigation Shortcuts
 Nocti provides specialized shortcuts for navigating long calendar lists:
 - **`Home` / `End`**: Jump immediately to the beginning or end of the calendar.

@@ -654,6 +654,14 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							resBg = GetColorCode(colors.TodoBg, resBg)
 						}
 					}
+				} else if currentResType == "calendar" && entry.IsFile && entry.Name != ".nocti.json" && entry.Name != "nocti.json" {
+					if IsHoliday(entry.RelPath, baseDir) {
+						resFg = "\033[38;5;214m" // Gold
+						if colors != nil {
+							resFg = GetFGColorCode(colors.HolidayFg, resFg)
+							resBg = GetColorCode(colors.HolidayBg, resBg)
+						}
+					}
 				}
 
 				if entryIdx == selectedIndex {

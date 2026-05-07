@@ -62,25 +62,34 @@ func GetCalendarDayPreview(relPath string, baseDir string) []string {
 	// Quarter
 	quarter := (int(t.Month())-1)/3 + 1
 
+	// Week of year
+	_, week := t.ISOWeek()
+
 	// Holidays
 	c := cal.NewBusinessCalendar()
 	c.AddHoliday(us.Holidays...)
 
 	actual, observed, holiday := c.IsHoliday(t)
 
-	holidayStr := "None"
+	holidayStr := ""
 	if actual || observed {
 		holidayStr = holiday.Name
 	}
 
-	return []string{
-		fmt.Sprintf("Date:        %s", t.Format("2006-01-02")),
-		fmt.Sprintf("Day of Year: %d", yDay),
-		fmt.Sprintf("Days Left:   %d", daysLeft),
-		fmt.Sprintf("Quarter:     Q%d", quarter),
-		fmt.Sprintf("Day of Week: %s", t.Weekday().String()),
-		fmt.Sprintf("Holidays:    %s", holidayStr),
+	lines := []string{
+		fmt.Sprintf("Date:         %s", t.Format("2006-01-02")),
+		fmt.Sprintf("Day of Year:  %d", yDay),
+		fmt.Sprintf("Week of Year: %d", week),
+		fmt.Sprintf("Days Left:    %d", daysLeft),
+		fmt.Sprintf("Quarter:      Q%d", quarter),
+		fmt.Sprintf("Day of Week:  %s", t.Weekday().String()),
 	}
+
+	if holidayStr != "" {
+		lines = append(lines, fmt.Sprintf("Holidays:    %s", holidayStr))
+	}
+
+	return lines
 }
 
 func isLeap(year int) bool {

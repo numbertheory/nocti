@@ -49,6 +49,8 @@ type ColorsConfig struct {
 	NotebookBg    string `json:"nocti_notebook_bg,omitempty"`
 	CalendarFg    string `json:"nocti_calendar_fg,omitempty"`
 	CalendarBg    string `json:"nocti_calendar_bg,omitempty"`
+	HolidayFg     string `json:"calendar_holiday_fg,omitempty"`
+	HolidayBg     string `json:"calendar_holiday_bg,omitempty"`
 	TodoFg        string `json:"nocti_todo_fg,omitempty"`
 	TodoBg        string `json:"nocti_todo_bg,omitempty"`
 }
