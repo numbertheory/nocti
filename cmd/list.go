@@ -97,7 +97,7 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipS
 	}
 
 	rootAdded := false
-	if includeRoot && parentResType != "calendar" {
+	if includeRoot {
 		addRootEntry()
 		rootAdded = true
 	}
@@ -106,17 +106,6 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipS
 		isDirOnly := strings.HasSuffix(f, string(os.PathSeparator))
 		cleanPath := strings.TrimSuffix(f, string(os.PathSeparator))
 		parts := strings.Split(cleanPath, string(os.PathSeparator))
-
-		// If this is a calendar, and we haven't added the root yet,
-		// and this entry is NOT a sub-resource, add the root now.
-		if includeRoot && parentResType == "calendar" && !rootAdded {
-			resType := getResourceType(cleanPath)
-			// A calendar "day" is not a directory with .nocti.json, or it's the .nocti.json itself
-			if resType == "" || f == ".nocti.json" {
-				addRootEntry()
-				rootAdded = true
-			}
-		}
 
 		// Process parent directories
 		for i := 0; i < len(parts)-1; i++ {
@@ -145,7 +134,7 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipS
 			if !seenDirs[dirPath] {
 				depth := len(parts) - 1 + depthOffset
 				resType := getResourceType(dirPath)
-				if parentResType == "calendar" && resType != "" && len(parts) == 1 {
+				if parentResType == "calendar" && resType != "" && resType != "event" && len(parts) == 1 {
 					depth = 0
 				}
 
@@ -742,16 +731,61 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			selected := entries[selectedIndex]
 			physPath := GetPhysicalPath(selected.RelPath, baseDir, currentResType)
 
-			if selected.IsFile {
+			if currentResType == "calendar" {
+				// Check if it's a date entry (either virtual or has a physical folder)
+				isDate := false
+				if _, err := GetDateFromRelPath(selected.RelPath, baseDir); err == nil {
+					isDate = true
+				}
+
+				if isDate {
+					allPreviewLines = GetCalendarDayPreview(selected.RelPath, baseDir)
+				} else if selected.IsFile {
+					fullPath := filepath.Join(baseDir, physPath)
+					if _, err := os.Stat(fullPath); err == nil {
+						allPreviewLines = GetFilePreview(fullPath, previewWidth)
+					} else {
+						allPreviewLines = []string{"[ File not found ]"}
+					}
+				} else {
+					// Fallthrough for resources within calendar
+					resConfigPath := filepath.Join(baseDir, physPath, ".nocti.json")
+					data, err := os.ReadFile(resConfigPath)
+					if err == nil {
+						var config struct {
+							ID   string `json:"id"`
+							Name string `json:"name"`
+							Type string `json:"type"`
+						}
+						json.Unmarshal(data, &config)
+
+						allPreviewLines = append(allPreviewLines, "Resource: "+config.Name)
+						allPreviewLines = append(allPreviewLines, "Type:     "+config.Type)
+						allPreviewLines = append(allPreviewLines, "ID:       "+config.ID)
+						allPreviewLines = append(allPreviewLines, "")
+
+						if config.Type == "notebook" {
+							files, _ := ScanNotebookFiles(filepath.Join(baseDir, selected.RelPath), false)
+							allPreviewLines = append(allPreviewLines, fmt.Sprintf("Notes:    %d", len(files)))
+						} else {
+							allPreviewLines = append(allPreviewLines, "[ Preview not implemented ]")
+						}
+					} else {
+						if info, err := os.Stat(filepath.Join(baseDir, selected.RelPath)); err == nil && info.IsDir() {
+							allPreviewLines = []string{"Directory: " + selected.RelPath}
+						} else {
+							allPreviewLines = []string{"Error reading resource config"}
+						}
+					}
+				}
+			} else if selected.IsFile {
 				fullPath := filepath.Join(baseDir, physPath)
 				if _, err := os.Stat(fullPath); err == nil {
 					allPreviewLines = GetFilePreview(fullPath, previewWidth)
-				} else if currentResType == "calendar" {
-					allPreviewLines = GetCalendarDayPreview(selected.RelPath, baseDir)
 				} else {
-					allPreviewLines = []string{"[ Not yet implemented ]"}
+					allPreviewLines = []string{"[ File not found ]"}
 				}
-			} else if isProjectRoot || currentResType == "calendar" {
+			} else if isProjectRoot {
 				resConfigPath := filepath.Join(baseDir, physPath, ".nocti.json")
 				data, err := os.ReadFile(resConfigPath)
 				if err == nil {
@@ -1432,8 +1466,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							// Check if it's a virtual day or a real file under a day
 							parts := strings.Split(selected.RelPath, string(os.PathSeparator))
 							if len(parts) == 1 || (currentResType == "calendar" && len(parts) == 2 && strings.Contains(parts[0], " ")) {
-								// Likely a virtual day or year/day - do nothing
-								if _, err := os.Stat(filepath.Join(baseDir, selected.RelPath)); err != nil {
+								// Likely a virtual day or year/day - check physical path
+								physPath := GetPhysicalPath(selected.RelPath, baseDir, currentResType)
+								if _, err := os.Stat(filepath.Join(baseDir, physPath)); err != nil {
 									continue
 								}
 							}
