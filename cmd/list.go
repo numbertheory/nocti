@@ -634,8 +634,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				entry := entries[entryIdx]
 				indent := strings.Repeat("  ", entry.Depth)
 				icon := iconFolder
+				displayName := entry.Name
+
 				if entry.IsFile {
-					if strings.HasSuffix(strings.ToLower(entry.Name), ".md") {
+					if currentResType == "calendar" && entry.Name != ".nocti.json" && entry.Name != "nocti.json" {
+						icon = " "
+						displayName = strings.TrimSuffix(displayName, ".md")
+					} else if strings.HasSuffix(strings.ToLower(entry.Name), ".md") {
 						icon = iconMarkdown
 					} else if entry.Name == ".nocti.json" || entry.Name == "nocti.json" {
 						icon = " " // Gear icon for settings
@@ -668,7 +673,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						}
 					}
 				}
-				displayStr := fmt.Sprintf("%s%s%s", indent, icon, entry.Name)
+				displayStr := fmt.Sprintf("%s%s%s", indent, icon, displayName)
 				if len(displayStr) > listWidth {
 					displayStr = displayStr[:listWidth-3] + "..."
 				}
