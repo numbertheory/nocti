@@ -772,6 +772,30 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						if config.Type == "notebook" {
 							files, _ := ScanNotebookFiles(filepath.Join(baseDir, selected.RelPath), false)
 							allPreviewLines = append(allPreviewLines, fmt.Sprintf("Notes:    %d", len(files)))
+						} else if config.Type == "calendar" {
+							// Load calendar-specific config
+							var calConfig struct {
+								DaysLength int    `json:"daysLength"`
+								CreatedAt  string `json:"created_at"`
+							}
+							json.Unmarshal(data, &calConfig)
+
+							if calConfig.DaysLength <= 0 {
+								calConfig.DaysLength = 30
+							}
+
+							centerDate := time.Now()
+							if calConfig.CreatedAt != "" {
+								if t, err := time.Parse(time.RFC3339, calConfig.CreatedAt); err == nil {
+									centerDate = t
+								}
+							}
+
+							startDate := centerDate.AddDate(0, 0, -calConfig.DaysLength)
+							endDate := centerDate.AddDate(0, 0, calConfig.DaysLength)
+
+							allPreviewLines = append(allPreviewLines, fmt.Sprintf("Range:    %s to %s", startDate.Format("2006-01-02"), endDate.Format("2006-01-02")))
+							allPreviewLines = append(allPreviewLines, fmt.Sprintf("Days:     %d", calConfig.DaysLength*2+1))
 						} else {
 							allPreviewLines = append(allPreviewLines, "[ Preview not implemented ]")
 						}
@@ -810,6 +834,30 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						files, _ := ScanNotebookFiles(filepath.Join(baseDir, selected.RelPath), false)
 						allPreviewLines = append(allPreviewLines, fmt.Sprintf("Notes:    %d", len(files)))
 
+					} else if config.Type == "calendar" {
+						// Load calendar-specific config
+						var calConfig struct {
+							DaysLength int    `json:"daysLength"`
+							CreatedAt  string `json:"created_at"`
+						}
+						json.Unmarshal(data, &calConfig)
+
+						if calConfig.DaysLength <= 0 {
+							calConfig.DaysLength = 30
+						}
+
+						centerDate := time.Now()
+						if calConfig.CreatedAt != "" {
+							if t, err := time.Parse(time.RFC3339, calConfig.CreatedAt); err == nil {
+								centerDate = t
+							}
+						}
+
+						startDate := centerDate.AddDate(0, 0, -calConfig.DaysLength)
+						endDate := centerDate.AddDate(0, 0, calConfig.DaysLength)
+
+						allPreviewLines = append(allPreviewLines, fmt.Sprintf("Range:    %s to %s", startDate.Format("2006-01-02"), endDate.Format("2006-01-02")))
+						allPreviewLines = append(allPreviewLines, fmt.Sprintf("Days:     %d", calConfig.DaysLength*2+1))
 					} else {
 						allPreviewLines = append(allPreviewLines, "[ Not yet implemented ]")
 					}
@@ -1126,34 +1174,49 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						// Perform creation for other types
 						targetDir := baseDir
 						creationOnDay := false
-						if currentResType == "calendar" && len(entries) > 0 {
+						if len(entries) > 0 {
 							selected := entries[selectedIndex]
-							if t, err := GetDateFromRelPath(selected.RelPath, baseDir); err == nil {
-								creationOnDay = true
-								dateFolder := t.Format("2006-01-02")
-								targetDir = filepath.Join(baseDir, dateFolder)
+							physPath := GetPhysicalPath(selected.RelPath, baseDir, currentResType)
 
-								// Ensure date folder exists and has .nocti.json
-								os.MkdirAll(targetDir, 0755)
-								dfConfigPath := filepath.Join(targetDir, ".nocti.json")
-								if _, err := os.Stat(dfConfigPath); os.IsNotExist(err) {
-									dfConfig := map[string]string{
-										"created_at": time.Now().Format(time.RFC3339),
-										"type":       "event",
-										"name":       selected.Name,
-									}
-									data, _ := json.MarshalIndent(dfConfig, "", "  ")
-									os.WriteFile(dfConfigPath, data, 0644)
-								}
-							}
-						}
-
-						if !creationOnDay && currentResType != "calendar" && len(entries) > 0 {
-							selected := entries[selectedIndex]
-							if selected.IsFile || selected.ResourceType == "calendar" || selected.ResourceType == "todo" {
-								targetDir = filepath.Join(baseDir, filepath.Dir(selected.RelPath))
+							if selected.IsFile {
+								targetDir = filepath.Join(baseDir, filepath.Dir(physPath))
 							} else {
-								targetDir = filepath.Join(baseDir, selected.RelPath)
+								targetDir = filepath.Join(baseDir, physPath)
+							}
+
+							// Special case for calendar: if it's a date-based virtual path,
+							// ensure the physical day folder exists and is initialized.
+							if currentResType == "calendar" {
+								dayRelPath := selected.RelPath
+								parts := strings.Split(dayRelPath, string(os.PathSeparator))
+								if len(parts) > 0 {
+									if len(parts[0]) == 4 && parts[0][0] >= '0' && parts[0][0] <= '9' {
+										if len(parts) >= 2 && strings.Contains(parts[1], " ") {
+											dayRelPath = filepath.Join(parts[0], parts[1])
+										}
+									} else if strings.Contains(parts[0], " ") {
+										dayRelPath = parts[0]
+									}
+								}
+
+								if t, err := GetDateFromRelPath(dayRelPath, baseDir); err == nil {
+									creationOnDay = true
+									dateFolder := t.Format("2006-01-02")
+									dayDir := filepath.Join(baseDir, dateFolder)
+
+									// Ensure date folder exists and has .nocti.json
+									os.MkdirAll(dayDir, 0755)
+									dfConfigPath := filepath.Join(dayDir, ".nocti.json")
+									if _, err := os.Stat(dfConfigPath); os.IsNotExist(err) {
+										dfConfig := map[string]string{
+											"created_at": time.Now().Format(time.RFC3339),
+											"type":       "event",
+											"name":       filepath.Base(dayRelPath),
+										}
+										data, _ := json.MarshalIndent(dfConfig, "", "  ")
+										os.WriteFile(dfConfigPath, data, 0644)
+									}
+								}
 							}
 						}
 
@@ -1164,6 +1227,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							if ext != ".md" && ext != ".txt" {
 								newName += ".md"
 							}
+							os.MkdirAll(targetDir, 0755)
 							os.WriteFile(filepath.Join(targetDir, newName), []byte(""), 0644)
 						case 1: // Folder
 							os.MkdirAll(filepath.Join(targetDir, newName), 0755)
@@ -1184,6 +1248,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							if createTypeSelected == 4 {
 								resType = "todo"
 							}
+							os.MkdirAll(targetDir, 0755)
 							var parentID, parentName string
 							pConfig, err := FindEnclosingResourceIn(targetDir)
 							if err == nil {
@@ -1196,6 +1261,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							if ext != ".md" {
 								newName += ".md"
 							}
+							os.MkdirAll(targetDir, 0755)
 							os.WriteFile(filepath.Join(targetDir, newName), []byte(""), 0644)
 						}
 
@@ -1244,40 +1310,54 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					}
 
 					targetDir := baseDir
-					creationOnDay := false
-					if currentResType == "calendar" && len(entries) > 0 {
+					if len(entries) > 0 {
 						selected := entries[selectedIndex]
-						if t, err := GetDateFromRelPath(selected.RelPath, baseDir); err == nil {
-							creationOnDay = true
-							dateFolder := t.Format("2006-01-02")
-							targetDir = filepath.Join(baseDir, dateFolder)
+						physPath := GetPhysicalPath(selected.RelPath, baseDir, currentResType)
 
-							// Ensure date folder exists and has .nocti.json
-							os.MkdirAll(targetDir, 0755)
-							dfConfigPath := filepath.Join(targetDir, ".nocti.json")
-							if _, err := os.Stat(dfConfigPath); os.IsNotExist(err) {
-								dfConfig := map[string]string{
-									"created_at": time.Now().Format(time.RFC3339),
-									"type":       "event",
-									"name":       selected.Name,
-								}
-								data, _ := json.MarshalIndent(dfConfig, "", "  ")
-								os.WriteFile(dfConfigPath, data, 0644)
-							}
-						}
-					}
-
-					if !creationOnDay && currentResType != "calendar" && len(entries) > 0 {
-						selected := entries[selectedIndex]
-						if selected.IsFile || selected.ResourceType == "calendar" || selected.ResourceType == "todo" {
-							targetDir = filepath.Join(baseDir, filepath.Dir(selected.RelPath))
+						if selected.IsFile {
+							targetDir = filepath.Join(baseDir, filepath.Dir(physPath))
 						} else {
-							targetDir = filepath.Join(baseDir, selected.RelPath)
+							targetDir = filepath.Join(baseDir, physPath)
+						}
+
+						// Special case for calendar: if it's a date-based virtual path,
+						// ensure the physical day folder exists and is initialized.
+						if currentResType == "calendar" {
+							dayRelPath := selected.RelPath
+							parts := strings.Split(dayRelPath, string(os.PathSeparator))
+							if len(parts) > 0 {
+								if len(parts[0]) == 4 && parts[0][0] >= '0' && parts[0][0] <= '9' {
+									if len(parts) >= 2 && strings.Contains(parts[1], " ") {
+										dayRelPath = filepath.Join(parts[0], parts[1])
+									}
+								} else if strings.Contains(parts[0], " ") {
+									dayRelPath = parts[0]
+								}
+							}
+
+							if t, err := GetDateFromRelPath(dayRelPath, baseDir); err == nil {
+								dateFolder := t.Format("2006-01-02")
+								dayDir := filepath.Join(baseDir, dateFolder)
+
+								// Ensure date folder exists and has .nocti.json
+								os.MkdirAll(dayDir, 0755)
+								dfConfigPath := filepath.Join(dayDir, ".nocti.json")
+								if _, err := os.Stat(dfConfigPath); os.IsNotExist(err) {
+									dfConfig := map[string]string{
+										"created_at": time.Now().Format(time.RFC3339),
+										"type":       "event",
+										"name":       filepath.Base(dayRelPath),
+									}
+									data, _ := json.MarshalIndent(dfConfig, "", "  ")
+									os.WriteFile(dfConfigPath, data, 0644)
+								}
+							}
 						}
 					}
 
 					var parentID, parentName string
 					pConfig, err := FindEnclosingResourceIn(targetDir)
+
 					if err == nil {
 						parentID = pConfig.ID
 						parentName = pConfig.Name
@@ -1443,8 +1523,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							editorCmd:      editorCmd,
 						})
 
-						// Jump to resource
-						newBaseDir := filepath.Join(baseDir, selected.RelPath)
+						// Jump to resource - ALWAYS USE PHYSICAL PATH
+						physPath := GetPhysicalPath(selected.RelPath, baseDir, currentResType)
+						newBaseDir := filepath.Join(baseDir, physPath)
 						showHidden = false // Reset hidden toggle
 						currentResType = selected.ResourceType
 
@@ -1490,6 +1571,36 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						cmd.Stdout = os.Stdout
 						cmd.Stderr = os.Stderr
 						cmd.Run()
+
+						// Refresh after returning from editor - ENSURE BASEDIR IS PHYSICAL
+						// (It should already be if navigation was fixed, but let's be safe)
+						if !isProjectRoot {
+							conf, err := FindEnclosingResourceIn(baseDir)
+							if err == nil {
+								currentResType = conf.Type
+							}
+						}
+
+						var newFiles []string
+						var err error
+						if isProjectRoot {
+							newFiles, err = ScanProjectResources(baseDir, showHidden)
+						} else if currentResType == "calendar" {
+							newFiles, err = ScanCalendarDays(baseDir, showHidden)
+						} else {
+							newFiles, err = ScanNotebookFiles(baseDir, showHidden)
+						}
+						if err == nil {
+							entries = BuildDisplayEntries(newFiles, baseDir, true, currentResType == "calendar", currentResType)
+						}
+						colors, editorCmd = loadColorsAndEditor(baseDir)
+
+						if selectedIndex >= len(entries) {
+							selectedIndex = len(entries) - 1
+						}
+						if selectedIndex < 0 {
+							selectedIndex = 0
+						}
 
 						// Re-enter raw mode and alt screen
 						oldState, _ = term.MakeRaw(int(os.Stdin.Fd()))
