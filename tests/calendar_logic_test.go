@@ -36,9 +36,9 @@ func TestScanCalendarDaysChronological(t *testing.T) {
 	}
 
 	expectedDays := []string{
-		"April 30",
-		"May 1",
-		"May 2",
+		"April 30/",
+		"May 1/",
+		"May 2/",
 	}
 
 	for i, d := range days {
@@ -78,10 +78,10 @@ func TestScanCalendarDaysMultiYear(t *testing.T) {
 
 	expected := []string{
 		"2023" + string(os.PathSeparator),
-		"2023" + string(os.PathSeparator) + "December 31",
+		"2023" + string(os.PathSeparator) + "December 31" + string(os.PathSeparator),
 		"2024" + string(os.PathSeparator),
-		"2024" + string(os.PathSeparator) + "January 1",
-		"2024" + string(os.PathSeparator) + "January 2",
+		"2024" + string(os.PathSeparator) + "January 1" + string(os.PathSeparator),
+		"2024" + string(os.PathSeparator) + "January 2" + string(os.PathSeparator),
 	}
 
 	for i, d := range days {
@@ -99,8 +99,8 @@ func TestScanCalendarDaysMultiYear(t *testing.T) {
 	if entries[0].Name != "2023" || entries[0].IsFile || entries[0].Depth != 0 {
 		t.Errorf("Expected 2023 folder at depth 0, got %+v", entries[0])
 	}
-	if entries[1].Name != "December 31" || !entries[1].IsFile || entries[1].Depth != 1 {
-		t.Errorf("Expected December 31 file at depth 1, got %+v", entries[1])
+	if entries[1].Name != "December 31" || entries[1].IsFile || entries[1].Depth != 1 {
+		t.Errorf("Expected December 31 folder at depth 1, got %+v", entries[1])
 	}
 }
 
