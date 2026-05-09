@@ -588,6 +588,20 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			return err
 		}
 
+		// Determine effective resource type for creation options based on selection
+		effectiveResType := currentResType
+		if isProjectRoot {
+			effectiveResType = "project"
+		}
+		if len(entries) > 0 {
+			selected := entries[selectedIndex]
+			if isProjectRoot && selected.RelPath == "." {
+				effectiveResType = "project"
+			} else if !selected.IsFile && selected.ResourceType != "" {
+				effectiveResType = selected.ResourceType
+			}
+		}
+
 		fmt.Print(reset + clearScreen + cursorHome)
 
 		// Layout Constants
@@ -656,7 +670,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						icon = " "
 						displayName = strings.TrimSuffix(displayName, ".md")
 					} else if currentResType == "todo" && entry.Name != ".nocti.json" && entry.Name != "nocti.json" {
-						icon = " "
+						icon = "  "
 						displayName = strings.TrimSuffix(displayName, ".md")
 					} else if strings.HasSuffix(strings.ToLower(entry.Name), ".md") {
 						icon = iconMarkdown
@@ -1000,7 +1014,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		if showCreateType {
 			modalWidth := 40
 			modalHeight := 11
-			if isProjectRoot || currentResType == "calendar" {
+			if effectiveResType == "project" || effectiveResType == "calendar" {
 				modalHeight = 9
 			}
 			startX := (width - modalWidth) / 2
@@ -1034,7 +1048,11 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			fmt.Printf("\033[%d;%dH%s%s CREATE NEW %s", startY+1, startX+(modalWidth-12)/2, hBg, hFg+boldOn, reset)
 
 			options := []string{" File ", " Folder ", " Notebook ", " Calendar ", " Todo "}
-			if currentResType == "calendar" {
+			if effectiveResType == "todo" {
+				options[0] = " Todo List "
+			}
+
+			if effectiveResType == "calendar" {
 				selectedIsDate := false
 				if len(entries) > 0 {
 					selected := entries[selectedIndex]
@@ -1062,7 +1080,10 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 			displayIdx := 0
 			for i, opt := range options {
-				if (isProjectRoot || currentResType == "calendar") && i < 2 {
+				if (effectiveResType == "project" || effectiveResType == "calendar") && i < 2 {
+					continue
+				}
+				if effectiveResType == "todo" && i == 1 { // Skip "Folder"
 					continue
 				}
 				fmt.Printf("\033[%d;%dH", startY+3+displayIdx, startX+(modalWidth-len(opt))/2)
@@ -1109,17 +1130,21 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			fmt.Printf("\033[%d;%dH%s%s└%s┘%s", startY+modalHeight-1, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
 
 			typeStr := "FILE"
-			switch createTypeSelected {
-			case 1:
-				typeStr = "FOLDER"
-			case 2:
-				typeStr = "NOTEBOOK"
-			case 3:
-				typeStr = "CALENDAR"
-			case 4:
-				typeStr = "TODO"
-			case 5:
-				typeStr = "EVENT"
+			if effectiveResType == "todo" && createTypeSelected == 0 {
+				typeStr = "TODO LIST"
+			} else {
+				switch createTypeSelected {
+				case 1:
+					typeStr = "FOLDER"
+				case 2:
+					typeStr = "NOTEBOOK"
+				case 3:
+					typeStr = "CALENDAR"
+				case 4:
+					typeStr = "TODO"
+				case 5:
+					typeStr = "EVENT"
+				}
 			}
 			fmt.Printf("\033[%d;%dH%s%s NEW %s NAME %s", startY+1, startX+(modalWidth-len(typeStr)-10)/2, hBg, hFg+boldOn, typeStr, reset)
 
@@ -1289,10 +1314,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							files, _ = ScanProjectResources(baseDir, showHidden)
 						} else if currentResType == "calendar" {
 							files, _ = ScanCalendarDays(baseDir, showHidden)
+						} else if currentResType == "todo" {
+							files, _ = ScanTodoItems(baseDir, showHidden)
 						} else {
 							files, _ = ScanNotebookFiles(baseDir, showHidden)
 						}
-						entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar", currentResType)
+						entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar" || currentResType == "todo", currentResType)
 						if selectedIndex >= len(entries) {
 							selectedIndex = len(entries) - 1
 						}
@@ -1389,10 +1416,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						files, _ = ScanProjectResources(baseDir, showHidden)
 					} else if currentResType == "calendar" {
 						files, _ = ScanCalendarDays(baseDir, showHidden)
+					} else if currentResType == "todo" {
+						files, _ = ScanTodoItems(baseDir, showHidden)
 					} else {
 						files, _ = ScanNotebookFiles(baseDir, showHidden)
 					}
-					entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar", currentResType)
+					entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar" || currentResType == "todo", currentResType)
 					if selectedIndex >= len(entries) {
 						selectedIndex = len(entries) - 1
 					}
@@ -1446,10 +1475,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					files, _ = ScanProjectResources(baseDir, showHidden)
 				} else if currentResType == "calendar" {
 					files, _ = ScanCalendarDays(baseDir, showHidden)
+				} else if currentResType == "todo" {
+					files, _ = ScanTodoItems(baseDir, showHidden)
 				} else {
 					files, _ = ScanNotebookFiles(baseDir, showHidden)
 				}
-				entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar", currentResType)
+				entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar" || currentResType == "todo", currentResType)
 				if selectedIndex >= len(entries) {
 					selectedIndex = len(entries) - 1
 				}
@@ -1506,7 +1537,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			}
 
 			if b[0] == 'n' || b[0] == 'N' {
-				if currentResType == "calendar" {
+				if effectiveResType == "calendar" || effectiveResType == "project" {
 					if len(entries) > 0 {
 						selected := entries[selectedIndex]
 						if selected.Name == ".nocti.json" || selected.Name == "nocti.json" {
@@ -1517,8 +1548,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					createTypeSelected = 2 // Start at Notebook
 				} else {
 					showCreateType = true
-					if isProjectRoot {
-						createTypeSelected = 2 // Start at Notebook
+					if effectiveResType == "todo" {
+						createTypeSelected = 0 // Start at Todo List
 					} else {
 						createTypeSelected = 0 // Start at File
 					}
@@ -1532,7 +1563,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			if b[0] == '\r' || b[0] == '\n' {
 				if len(entries) > 0 {
 					selected := entries[selectedIndex]
-					if !selected.IsFile && (selected.ResourceType == "notebook" || selected.ResourceType == "calendar") {
+					if !selected.IsFile && (selected.ResourceType == "notebook" || selected.ResourceType == "calendar" || selected.ResourceType == "todo") {
 						// Push current state to stack
 						navStack = append(navStack, navState{
 							dir:            baseDir,
@@ -1552,10 +1583,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						var newFiles []string
 						if currentResType == "calendar" {
 							newFiles, _ = ScanCalendarDays(newBaseDir, showHidden)
+						} else if currentResType == "todo" {
+							newFiles, _ = ScanTodoItems(newBaseDir, showHidden)
 						} else {
 							newFiles, _ = ScanNotebookFiles(newBaseDir, showHidden)
 						}
-						newEntries := BuildDisplayEntries(newFiles, newBaseDir, true, currentResType == "calendar", currentResType)
+						newEntries := BuildDisplayEntries(newFiles, newBaseDir, true, currentResType == "calendar" || currentResType == "todo", currentResType)
 
 						// Refresh colors and editor for the new resource
 						colors, editorCmd = loadColorsAndEditor(newBaseDir)
@@ -1607,11 +1640,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							newFiles, err = ScanProjectResources(baseDir, showHidden)
 						} else if currentResType == "calendar" {
 							newFiles, err = ScanCalendarDays(baseDir, showHidden)
+						} else if currentResType == "todo" {
+							newFiles, err = ScanTodoItems(baseDir, showHidden)
 						} else {
 							newFiles, err = ScanNotebookFiles(baseDir, showHidden)
 						}
 						if err == nil {
-							entries = BuildDisplayEntries(newFiles, baseDir, true, currentResType == "calendar", currentResType)
+							entries = BuildDisplayEntries(newFiles, baseDir, true, currentResType == "calendar" || currentResType == "todo", currentResType)
 						}
 						colors, editorCmd = loadColorsAndEditor(baseDir)
 
@@ -1642,15 +1677,18 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				switch b[2] {
 				case 65: // Up
 					minIdx := 0
-					if isProjectRoot || currentResType == "calendar" {
+					if effectiveResType == "project" || effectiveResType == "calendar" {
 						minIdx = 2
 					}
 					if createTypeSelected > minIdx {
 						createTypeSelected--
+						if effectiveResType == "todo" && createTypeSelected == 1 {
+							createTypeSelected = 0
+						}
 					}
 				case 66: // Down
 					maxIdx := 4
-					if currentResType == "calendar" {
+					if effectiveResType == "calendar" {
 						// Check if Event is available (same logic as in drawing)
 						selectedIsDate := false
 						if len(entries) > 0 {
@@ -1677,6 +1715,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 					if createTypeSelected < maxIdx {
 						createTypeSelected++
+						if effectiveResType == "todo" && createTypeSelected == 1 {
+							createTypeSelected = 2
+						}
 					}
 				}
 				continue
