@@ -22,6 +22,8 @@ type DisplayEntry struct {
 	Depth        int
 	Name         string
 	ResourceType string // "notebook", "todo", "calendar", or empty for normal folder
+	DoneTasks    int
+	TotalTasks   int
 }
 
 func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipSort bool, parentResType string) []DisplayEntry {
@@ -168,11 +170,19 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipS
 				depth = 0
 			}
 
+			done, total := 0, 0
+			if parentResType == "todo" && strings.HasSuffix(strings.ToLower(f), ".md") {
+				physPath := GetPhysicalPath(f, baseDir, parentResType)
+				done, total = GetTaskStatus(filepath.Join(baseDir, physPath))
+			}
+
 			entries = append(entries, DisplayEntry{
-				RelPath: f,
-				IsFile:  true,
-				Depth:   depth,
-				Name:    parts[len(parts)-1],
+				RelPath:    f,
+				IsFile:     true,
+				Depth:      depth,
+				Name:       parts[len(parts)-1],
+				DoneTasks:  done,
+				TotalTasks: total,
 			})
 		}
 	}
@@ -670,8 +680,19 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						icon = " "
 						displayName = strings.TrimSuffix(displayName, ".md")
 					} else if currentResType == "todo" && entry.Name != ".nocti.json" && entry.Name != "nocti.json" {
-						icon = "  "
+						// There should always be a space between the icon and the name of the todo list
+						// nf-md-checkbox_blank_outline for incomplete tasks
+						icon = "  "
 						displayName = strings.TrimSuffix(displayName, ".md")
+
+						if entry.TotalTasks > 0 {
+							if entry.DoneTasks == entry.TotalTasks {
+								// nf-md-check_bold for completed tasks
+								icon = " 󰸞 "
+							} else if entry.DoneTasks > 0 {
+								displayName = fmt.Sprintf("%s (%d/%d)", displayName, entry.DoneTasks, entry.TotalTasks)
+							}
+						}
 					} else if strings.HasSuffix(strings.ToLower(entry.Name), ".md") {
 						icon = iconMarkdown
 					} else if entry.Name == ".nocti.json" || entry.Name == "nocti.json" {

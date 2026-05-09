@@ -53,3 +53,27 @@ func GetTodoPreview(path string, width int) []string {
 	// For now, use the same as FilePreview
 	return GetFilePreview(path, width)
 }
+
+func GetTaskStatus(path string) (int, int) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0
+	}
+
+	lines := strings.Split(string(data), "\n")
+	total := 0
+	done := 0
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Check for "- [ ]" or "- [x]" or "- [X]" etc.
+		if strings.HasPrefix(trimmed, "- [") && len(trimmed) >= 5 && trimmed[4] == ']' {
+			total++
+			if trimmed[3] != ' ' {
+				done++
+			}
+		}
+	}
+
+	return done, total
+}

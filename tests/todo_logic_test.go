@@ -88,3 +88,36 @@ func TestBuildDisplayEntriesForTodo(t *testing.T) {
 		t.Errorf("Sub-notebook entry incorrect: %+v", entries[2])
 	}
 }
+
+func TestGetTaskStatus(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "nocti-todo-status-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	content := `
+# My Tasks
+- [ ] Task 1
+- [x] Task 2
+- [X] Task 3
+- [?] Task 4
+- [ ] Task 5
+Not a task
+  - [ ] Indented task
+`
+	path := filepath.Join(tmpDir, "tasks.md")
+	os.WriteFile(path, []byte(content), 0644)
+
+	done, total := cmd.GetTaskStatus(path)
+
+	// Total should be 6 (Task 1, 2, 3, 4, 5, and Indented task)
+	if total != 6 {
+		t.Errorf("Expected 6 total tasks, got %d", total)
+	}
+
+	// Done should be 3 (Task 2, 3, 4 - any non-space is done)
+	if done != 3 {
+		t.Errorf("Expected 3 done tasks, got %d", done)
+	}
+}
