@@ -1265,13 +1265,31 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 						newName := createInputName
 						switch createTypeSelected {
-						case 0: // File
+						case 0: // File / Todo List
 							ext := filepath.Ext(newName)
 							if ext != ".md" && ext != ".txt" {
 								newName += ".md"
 							}
 							os.MkdirAll(targetDir, 0755)
-							os.WriteFile(filepath.Join(targetDir, newName), []byte(""), 0644)
+
+							content := ""
+							if effectiveResType == "todo" {
+								// Read template
+								templatePath := "templates/todo_template.md"
+								// Try to find it relative to project root if not in CWD
+								if root, err := FindProjectRoot(); err == nil {
+									templatePath = filepath.Join(root, "templates", "todo_template.md")
+								}
+
+								templateData, err := os.ReadFile(templatePath)
+								if err == nil {
+									content = strings.ReplaceAll(string(templateData), "{{NAME}}", strings.TrimSuffix(createInputName, filepath.Ext(createInputName)))
+								} else {
+									// Fallback if template file is missing
+									content = fmt.Sprintf("# %s To Do List\n\n- [ ] Sample Task 1\n- [ ] Sample Task 2\n- [ ] Sample Task 3\n", strings.TrimSuffix(createInputName, filepath.Ext(createInputName)))
+								}
+							}
+							os.WriteFile(filepath.Join(targetDir, newName), []byte(content), 0644)
 						case 1: // Folder
 							os.MkdirAll(filepath.Join(targetDir, newName), 0755)
 						case 2, 3, 4: // Notebook, Calendar, Todo
