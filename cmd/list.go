@@ -33,21 +33,22 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipS
 		sort.Strings(files)
 	}
 
-	getResourceType := func(path string) string {
+	getResourceInfo := func(path string) (string, string) {
 		physPath := GetPhysicalPath(path, baseDir, parentResType)
 
 		configPath := filepath.Join(baseDir, physPath, ".nocti.json")
 		data, err := os.ReadFile(configPath)
 		if err != nil {
-			return ""
+			return "", ""
 		}
 		var config struct {
+			Name string `json:"name"`
 			Type string `json:"type"`
 		}
 		if err := json.Unmarshal(data, &config); err != nil {
-			return ""
+			return "", ""
 		}
-		return config.Type
+		return config.Type, config.Name
 	}
 
 	addRootEntry := func() {
@@ -112,16 +113,22 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipS
 			dirPath := filepath.Join(parts[:i+1]...)
 			if !seenDirs[dirPath] {
 				depth := i + depthOffset
-				resType := getResourceType(dirPath)
-				if parentResType == "calendar" && resType != "" && resType != "event" && i == 0 {
+				resType, resName := getResourceInfo(dirPath)
+				if (parentResType == "calendar" && resType != "" && resType != "event" && i == 0) ||
+					(parentResType == "todo" && resType != "" && i == 0) {
 					depth = 0
+				}
+
+				name := parts[i]
+				if resName != "" {
+					name = resName
 				}
 
 				entries = append(entries, DisplayEntry{
 					RelPath:      dirPath,
 					IsFile:       false,
 					Depth:        depth,
-					Name:         parts[i],
+					Name:         name,
 					ResourceType: resType,
 				})
 				seenDirs[dirPath] = true
@@ -133,16 +140,22 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipS
 			dirPath := cleanPath
 			if !seenDirs[dirPath] {
 				depth := len(parts) - 1 + depthOffset
-				resType := getResourceType(dirPath)
-				if parentResType == "calendar" && resType != "" && resType != "event" && len(parts) == 1 {
+				resType, resName := getResourceInfo(dirPath)
+				if (parentResType == "calendar" && resType != "" && resType != "event" && len(parts) == 1) ||
+					(parentResType == "todo" && resType != "" && len(parts) == 1) {
 					depth = 0
+				}
+
+				name := parts[len(parts)-1]
+				if resName != "" {
+					name = resName
 				}
 
 				entries = append(entries, DisplayEntry{
 					RelPath:      dirPath,
 					IsFile:       false,
 					Depth:        depth,
-					Name:         parts[len(parts)-1],
+					Name:         name,
 					ResourceType: resType,
 				})
 				seenDirs[dirPath] = true
@@ -150,7 +163,7 @@ func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipS
 		} else {
 			// Process the file itself
 			depth := len(parts) - 1 + depthOffset
-			if parentResType == "calendar" && len(parts) == 1 && getResourceType(cleanPath) != "" {
+			if parentResType == "calendar" && len(parts) == 1 && func() bool { t, _ := getResourceInfo(cleanPath); return t != "" }() {
 				// This shouldn't really happen for files in a calendar but for robustness:
 				depth = 0
 			}
@@ -284,6 +297,8 @@ var ListCmd = &cobra.Command{
 			files, err = ScanProjectResources(searchDir, false)
 		} else if currentResType == "calendar" {
 			files, err = ScanCalendarDays(searchDir, false)
+		} else if currentResType == "todo" {
+			files, err = ScanTodoItems(searchDir, false)
 		} else {
 			files, err = ScanNotebookFiles(searchDir, false)
 		}
@@ -313,7 +328,7 @@ var ListCmd = &cobra.Command{
 
 		colors, editorCmd := loadColorsAndEditor(searchDir)
 
-		entries := BuildDisplayEntries(files, searchDir, true, currentResType == "calendar", currentResType)
+		entries := BuildDisplayEntries(files, searchDir, true, currentResType == "calendar" || currentResType == "todo", currentResType)
 		return runInteractiveList(entries, searchDir, colors, editorCmd, isProjectRoot, currentResType)
 	},
 }
@@ -639,6 +654,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				if entry.IsFile {
 					if currentResType == "calendar" && entry.Name != ".nocti.json" && entry.Name != "nocti.json" {
 						icon = " "
+						displayName = strings.TrimSuffix(displayName, ".md")
+					} else if currentResType == "todo" && entry.Name != ".nocti.json" && entry.Name != "nocti.json" {
+						icon = " "
 						displayName = strings.TrimSuffix(displayName, ".md")
 					} else if strings.HasSuffix(strings.ToLower(entry.Name), ".md") {
 						icon = iconMarkdown
