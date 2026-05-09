@@ -20,7 +20,21 @@ For full command references and advanced usage, please see the following guides 
 *   [`nocti init`](docs/content/docs/init.md): Setting up your project.
 *   [`nocti new`](docs/content/docs/new.md): Creating and nesting resources.
 *   [`nocti list`](docs/content/docs/list.md): Exploring your notebook content.
-*   [`nocti update`](docs/content/docs/update.md): Synchronizing the project registry.
+- `nocti update`: Synchronizing the project registry.
+
+## 🤖 AI Disclosure
+
+This project was developed extensively with the assistance of **Gemini** (agentic coding). AI was used for:
+- Implementing core resource management logic (Notebooks, Calendars, Todo Lists).
+- Designing the interactive terminal UI and navigation system.
+- Generating unit tests and maintaining architectural consistency.
+- Drafting documentation and formatting project metadata.
+
+All AI-generated code has been directed, reviewed, and verified by the human maintainer to ensure quality and security.
+
+## License
+
+This project is licensed under the **PolyForm Noncommercial License 1.0.0**. It is free for personal and non-commercial use. See [LICENSE.md](LICENSE.md) for the full license text.
 
 ## Installation
 
