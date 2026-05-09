@@ -702,7 +702,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							resBg = GetColorCode(colors.TodoBg, resBg)
 						}
 					}
-				} else if currentResType == "calendar" && entry.IsFile && entry.Name != ".nocti.json" && entry.Name != "nocti.json" {
+				} else if currentResType == "calendar" && entry.Name != ".nocti.json" && entry.Name != "nocti.json" {
 					if IsHoliday(entry.RelPath, baseDir) {
 						resFg = "\033[38;5;214m" // Gold
 						if colors != nil {
@@ -1454,6 +1454,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					editorCmd = last.editorCmd
 					showHidden = false // Reset hidden toggle when going back
 					selectedIndex = 0
+					listOffset = 0
 					previewOffset = 0
 					focusList = true
 					continue
@@ -1478,6 +1479,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					editorCmd = last.editorCmd
 					showHidden = false // Reset hidden toggle when going back
 					selectedIndex = 0
+					listOffset = 0
 					previewOffset = 0
 					focusList = true
 					continue

@@ -29,12 +29,14 @@ func GetDateFromRelPath(relPath string, baseDir string) (time.Time, error) {
 	var t time.Time
 	var err error
 
+	cleanRel := strings.TrimSuffix(relPath, string(os.PathSeparator))
+
 	// Handle "Year/Month Day" or "Month Day"
-	parts := strings.Split(relPath, string(os.PathSeparator))
+	parts := strings.Split(cleanRel, string(os.PathSeparator))
 	if len(parts) == 2 {
-		t, err = time.Parse("2006/January 2", relPath)
+		t, err = time.Parse("2006/January 2", cleanRel)
 	} else {
-		t, err = time.Parse("January 2", relPath)
+		t, err = time.Parse("January 2", cleanRel)
 		if err == nil {
 			t = time.Date(defaultYear, t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 		}
