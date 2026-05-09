@@ -12,6 +12,8 @@ This guide will help you install Nocti and get started with your first project.
 ### Download Binaries
 You can download the latest pre-compiled binaries for your system from the [GitHub Releases](https://github.com/numbertheory/nocti/releases) page.
 
+If using downloaded binaries on macOS, `nocti` may be blocked. Go to your Privacy and Security settings, and click the button to allow nocti to run.
+
 ### Build from Source
 If you have [Go](https://go.dev/doc/install) (1.26.2+) installed, you can build Nocti manually:
 
