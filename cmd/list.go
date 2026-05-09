@@ -562,6 +562,10 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 	createInputName := ""
 	createInputDays := ""
 
+	showOverwriteConfirm := false
+	showFolderExistsError := false
+	pendingCreation := func() {}
+
 	// ANSI escape codes
 	const (
 		clearScreen    = "\033[2J"
@@ -1173,6 +1177,64 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			fmt.Printf("\033[%d;%dH%s%s ENTER to confirm | ESC to cancel %s", startY+6, startX+(modalWidth-28)/2, hBg, hFg, reset)
 		}
 
+		// 7.2 Overwrite Confirmation Modal
+		if showOverwriteConfirm {
+			modalWidth := 60
+			modalHeight := 8
+			startX := (width - modalWidth) / 2
+			startY := (height - modalHeight) / 2
+
+			hBg := "\033[41m"      // Red background for warning
+			hFg := "\033[38;5;15m" // White foreground
+			hbBg := "\033[41m"
+			hbFg := "\033[38;5;15m"
+
+			if colors != nil {
+				hBg = GetColorCode(colors.HelpBg, hBg)
+				hFg = GetFGColorCode(colors.HelpFg, hFg)
+			}
+
+			for i := 0; i < modalHeight; i++ {
+				fmt.Printf("\033[%d;%dH%s%s%*s%s", startY+i, startX, hBg, hFg, modalWidth, "", reset)
+			}
+			fmt.Printf("\033[%d;%dH%s%s┌%s┐%s", startY, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+			for i := 1; i < modalHeight-1; i++ {
+				fmt.Printf("\033[%d;%dH%s%s│\033[%d;%dH%s%s│%s", startY+i, startX, hbBg, hbFg, startY+i, startX+modalWidth-1, hbBg, hbFg, reset)
+			}
+			fmt.Printf("\033[%d;%dH%s%s└%s┘%s", startY+modalHeight-1, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+
+			msg := "FILE ALREADY EXISTS. OVERWRITE?"
+			fmt.Printf("\033[%d;%dH%s%s%s", startY+2, startX+(modalWidth-len(msg))/2, hBg, hFg+boldOn, msg)
+			fmt.Printf("\033[%d;%dH%s%s%s", startY+3, startX+(modalWidth-len(createInputName))/2, hBg, hFg, createInputName)
+			fmt.Printf("\033[%d;%dH%s%s ENTER to overwrite | ESC to cancel %s", startY+5, startX+(modalWidth-34)/2, hBg, hFg, reset)
+		}
+
+		// 7.3 Folder Exists Modal
+		if showFolderExistsError {
+			modalWidth := 60
+			modalHeight := 8
+			startX := (width - modalWidth) / 2
+			startY := (height - modalHeight) / 2
+
+			hBg := "\033[41m" // Red background
+			hFg := "\033[38;5;15m"
+			hbBg := "\033[41m"
+			hbFg := "\033[38;5;15m"
+
+			for i := 0; i < modalHeight; i++ {
+				fmt.Printf("\033[%d;%dH%s%s%*s%s", startY+i, startX, hBg, hFg, modalWidth, "", reset)
+			}
+			fmt.Printf("\033[%d;%dH%s%s┌%s┐%s", startY, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+			for i := 1; i < modalHeight-1; i++ {
+				fmt.Printf("\033[%d;%dH%s%s│\033[%d;%dH%s%s│%s", startY+i, startX, hbBg, hbFg, startY+i, startX+modalWidth-1, hbBg, hbFg, reset)
+			}
+			fmt.Printf("\033[%d;%dH%s%s└%s┘%s", startY+modalHeight-1, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+
+			msg := fmt.Sprintf("FOLDER '%s' ALREADY EXISTS", createInputName)
+			fmt.Printf("\033[%d;%dH%s%s%s", startY+3, startX+(modalWidth-len(msg))/2, hBg, hFg+boldOn, msg)
+			fmt.Printf("\033[%d;%dH%s%s ESC / ENTER to dismiss %s", startY+5, startX+(modalWidth-24)/2, hBg, hFg, reset)
+		}
+
 		// 7.5 Create Days Modal (Calendar specific)
 		if showCreateDays {
 			modalWidth := 50
@@ -1228,16 +1290,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			if showCreateName {
 				if b[0] == '\r' || b[0] == '\n' {
 					if createInputName != "" {
-						if createTypeSelected == 3 { // Calendar
-							showCreateName = false
-							showCreateDays = true
-							createInputDays = "30"
-							continue
-						}
-
-						// Perform creation for other types
+						// Prepare the creation logic
 						targetDir := baseDir
-						creationOnDay := false
 						if len(entries) > 0 {
 							selected := entries[selectedIndex]
 							physPath := GetPhysicalPath(selected.RelPath, baseDir, currentResType)
@@ -1264,7 +1318,6 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 								}
 
 								if t, err := GetDateFromRelPath(dayRelPath, baseDir); err == nil {
-									creationOnDay = true
 									dateFolder := t.Format("2006-01-02")
 									dayDir := filepath.Join(baseDir, dateFolder)
 
@@ -1285,86 +1338,134 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						}
 
 						newName := createInputName
+						fullPath := ""
 						switch createTypeSelected {
-						case 0: // File / Todo List
+						case 0, 5: // File / Todo List or Event
 							ext := filepath.Ext(newName)
-							if ext != ".md" && ext != ".txt" {
-								newName += ".md"
-							}
-							os.MkdirAll(targetDir, 0755)
-
-							content := ""
-							if effectiveResType == "todo" {
-								// Read template
-								templatePath := "templates/todo_template.md"
-								// Try to find it relative to project root if not in CWD
-								if root, err := FindProjectRoot(); err == nil {
-									templatePath = filepath.Join(root, "templates", "todo_template.md")
+							if createTypeSelected == 0 {
+								if ext != ".md" && ext != ".txt" {
+									newName += ".md"
 								}
-
-								templateData, err := os.ReadFile(templatePath)
-								if err == nil {
-									content = strings.ReplaceAll(string(templateData), "{{NAME}}", strings.TrimSuffix(createInputName, filepath.Ext(createInputName)))
-								} else {
-									// Fallback if template file is missing
-									content = fmt.Sprintf("# %s To Do List\n\n- [ ] Sample Task 1\n- [ ] Sample Task 2\n- [ ] Sample Task 3\n", strings.TrimSuffix(createInputName, filepath.Ext(createInputName)))
+							} else { // Event
+								if ext != ".md" {
+									newName += ".md"
 								}
 							}
-							os.WriteFile(filepath.Join(targetDir, newName), []byte(content), 0644)
+							fullPath = filepath.Join(targetDir, newName)
 						case 1: // Folder
-							os.MkdirAll(filepath.Join(targetDir, newName), 0755)
+							fullPath = filepath.Join(targetDir, newName)
 						case 2, 3, 4: // Notebook, Calendar, Todo
-							resType := "notebook"
-							if createTypeSelected == 3 {
-								resType = "calendar"
-								if creationOnDay {
-									// If creating a calendar on a day, we need daysLength.
-									// But for now, just skip to the days modal or use default.
-									// Actually, we should trigger showCreateDays.
-									showCreateName = false
-									showCreateDays = true
-									createInputDays = "30"
-									continue
-								}
-							}
-							if createTypeSelected == 4 {
-								resType = "todo"
-							}
-							os.MkdirAll(targetDir, 0755)
-							var parentID, parentName string
-							pConfig, err := FindEnclosingResourceIn(targetDir)
-							if err == nil {
-								parentID = pConfig.ID
-								parentName = pConfig.Name
-							}
-							CreateResource(resType, targetDir, newName, parentID, parentName, 0)
-						case 5: // Event (.md file)
-							ext := filepath.Ext(newName)
-							if ext != ".md" {
-								newName += ".md"
-							}
-							os.MkdirAll(targetDir, 0755)
-							os.WriteFile(filepath.Join(targetDir, newName), []byte(""), 0644)
+							fullPath = filepath.Join(targetDir, newName)
 						}
 
-						// Refresh
-						var files []string
-						if isProjectRoot {
-							files, _ = ScanProjectResources(baseDir, showHidden)
-						} else if currentResType == "calendar" {
-							files, _ = ScanCalendarDays(baseDir, showHidden)
-						} else if currentResType == "todo" {
-							files, _ = ScanTodoItems(baseDir, showHidden)
+						var performCreation func()
+
+						goToDaysModal := func() {
+							showCreateName = false
+							showCreateDays = true
+							createInputDays = "30"
+							pendingCreation = performCreation
+						}
+
+						performCreation = func() {
+							if createTypeSelected == 3 && !showCreateDays {
+								goToDaysModal()
+								return
+							}
+
+							days := 0
+							if createTypeSelected == 3 {
+								fmt.Sscanf(createInputDays, "%d", &days)
+								if days <= 0 {
+									days = 30
+								}
+							}
+
+							switch createTypeSelected {
+							case 0: // File / Todo List
+								os.MkdirAll(targetDir, 0755)
+
+								content := ""
+								if effectiveResType == "todo" {
+									// Read template
+									templatePath := "templates/todo_template.md"
+									// Try to find it relative to project root if not in CWD
+									if root, err := FindProjectRoot(); err == nil {
+										templatePath = filepath.Join(root, "templates", "todo_template.md")
+									}
+
+									templateData, err := os.ReadFile(templatePath)
+									if err == nil {
+										content = strings.ReplaceAll(string(templateData), "{{NAME}}", strings.TrimSuffix(createInputName, filepath.Ext(createInputName)))
+									} else {
+										// Fallback if template file is missing
+										content = fmt.Sprintf("# %s To Do List\n\n- [ ] Sample Task 1\n- [ ] Sample Task 2\n- [ ] Sample Task 3\n", strings.TrimSuffix(createInputName, filepath.Ext(createInputName)))
+									}
+								}
+								os.WriteFile(fullPath, []byte(content), 0644)
+							case 1: // Folder
+								os.MkdirAll(fullPath, 0755)
+							case 2, 3, 4: // Notebook, Calendar, Todo
+								resType := "notebook"
+								if createTypeSelected == 3 {
+									resType = "calendar"
+								}
+								if createTypeSelected == 4 {
+									resType = "todo"
+								}
+								os.MkdirAll(targetDir, 0755)
+								var parentID, parentName string
+								pConfig, err := FindEnclosingResourceIn(targetDir)
+								if err == nil {
+									parentID = pConfig.ID
+									parentName = pConfig.Name
+								}
+								CreateResource(resType, targetDir, newName, parentID, parentName, days)
+							case 5: // Event (.md file)
+								os.MkdirAll(targetDir, 0755)
+								os.WriteFile(fullPath, []byte(""), 0644)
+							}
+
+							// Refresh
+							var files []string
+							if isProjectRoot {
+								files, _ = ScanProjectResources(baseDir, showHidden)
+							} else if currentResType == "calendar" {
+								files, _ = ScanCalendarDays(baseDir, showHidden)
+							} else if currentResType == "todo" {
+								files, _ = ScanTodoItems(baseDir, showHidden)
+							} else {
+								files, _ = ScanNotebookFiles(baseDir, showHidden)
+							}
+							entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar" || currentResType == "todo", currentResType)
+							if selectedIndex >= len(entries) {
+								selectedIndex = len(entries) - 1
+							}
+							if selectedIndex < 0 {
+								selectedIndex = 0
+							}
+							showCreateName = false
+							showCreateDays = false
+						}
+
+						// Check if path exists
+						if info, err := os.Stat(fullPath); err == nil {
+							if info.IsDir() {
+								showFolderExistsError = true
+								showCreateName = false
+							} else {
+								showOverwriteConfirm = true
+								showCreateName = false
+								pendingCreation = performCreation
+							}
 						} else {
-							files, _ = ScanNotebookFiles(baseDir, showHidden)
+							if createTypeSelected == 3 {
+								goToDaysModal()
+							} else {
+								performCreation()
+							}
 						}
-						entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar" || currentResType == "todo", currentResType)
-						if selectedIndex >= len(entries) {
-							selectedIndex = len(entries) - 1
-						}
-						if selectedIndex < 0 {
-							selectedIndex = 0
-						}
+						continue
 					}
 					showCreateName = false
 					continue
@@ -1383,91 +1484,31 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				continue
 			}
 
+			if showOverwriteConfirm {
+				if b[0] == '\r' || b[0] == '\n' {
+					pendingCreation()
+					showOverwriteConfirm = false
+					continue
+				} else if b[0] == 27 { // ESC
+					showOverwriteConfirm = false
+					continue
+				}
+				continue
+			}
+
+			if showFolderExistsError {
+				if b[0] == '\r' || b[0] == '\n' || b[0] == 27 {
+					showFolderExistsError = false
+					continue
+				}
+				continue
+			}
+
 			if showCreateDays {
 				if b[0] == '\r' || b[0] == '\n' {
-					days := 30
-					if createInputDays != "" {
-						fmt.Sscanf(createInputDays, "%d", &days)
-						if days <= 0 {
-							days = 30
-						}
+					if pendingCreation != nil {
+						pendingCreation()
 					}
-
-					targetDir := baseDir
-					if len(entries) > 0 {
-						selected := entries[selectedIndex]
-						physPath := GetPhysicalPath(selected.RelPath, baseDir, currentResType)
-
-						if selected.IsFile {
-							targetDir = filepath.Join(baseDir, filepath.Dir(physPath))
-						} else {
-							targetDir = filepath.Join(baseDir, physPath)
-						}
-
-						// Special case for calendar: if it's a date-based virtual path,
-						// ensure the physical day folder exists and is initialized.
-						if currentResType == "calendar" {
-							dayRelPath := selected.RelPath
-							parts := strings.Split(dayRelPath, string(os.PathSeparator))
-							if len(parts) > 0 {
-								if len(parts[0]) == 4 && parts[0][0] >= '0' && parts[0][0] <= '9' {
-									if len(parts) >= 2 && strings.Contains(parts[1], " ") {
-										dayRelPath = filepath.Join(parts[0], parts[1])
-									}
-								} else if strings.Contains(parts[0], " ") {
-									dayRelPath = parts[0]
-								}
-							}
-
-							if t, err := GetDateFromRelPath(dayRelPath, baseDir); err == nil {
-								dateFolder := t.Format("2006-01-02")
-								dayDir := filepath.Join(baseDir, dateFolder)
-
-								// Ensure date folder exists and has .nocti.json
-								os.MkdirAll(dayDir, 0755)
-								dfConfigPath := filepath.Join(dayDir, ".nocti.json")
-								if _, err := os.Stat(dfConfigPath); os.IsNotExist(err) {
-									dfConfig := map[string]string{
-										"created_at": time.Now().Format(time.RFC3339),
-										"type":       "event",
-										"name":       filepath.Base(dayRelPath),
-									}
-									data, _ := json.MarshalIndent(dfConfig, "", "  ")
-									os.WriteFile(dfConfigPath, data, 0644)
-								}
-							}
-						}
-					}
-
-					var parentID, parentName string
-					pConfig, err := FindEnclosingResourceIn(targetDir)
-
-					if err == nil {
-						parentID = pConfig.ID
-						parentName = pConfig.Name
-					}
-
-					CreateResource("calendar", targetDir, createInputName, parentID, parentName, days)
-
-					// Refresh
-					var files []string
-					if isProjectRoot {
-						files, _ = ScanProjectResources(baseDir, showHidden)
-					} else if currentResType == "calendar" {
-						files, _ = ScanCalendarDays(baseDir, showHidden)
-					} else if currentResType == "todo" {
-						files, _ = ScanTodoItems(baseDir, showHidden)
-					} else {
-						files, _ = ScanNotebookFiles(baseDir, showHidden)
-					}
-					entries = BuildDisplayEntries(files, baseDir, true, currentResType == "calendar" || currentResType == "todo", currentResType)
-					if selectedIndex >= len(entries) {
-						selectedIndex = len(entries) - 1
-					}
-					if selectedIndex < 0 {
-						selectedIndex = 0
-					}
-					showCreateDays = false
 					continue
 				} else if b[0] == 27 { // ESC
 					showCreateDays = false
