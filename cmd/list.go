@@ -564,6 +564,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 	showOverwriteConfirm := false
 	showFolderExistsError := false
+	showEditorError := false
+	lastEditorError := ""
 	pendingCreation := func() {}
 
 	// ANSI escape codes
@@ -1235,6 +1237,37 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			fmt.Printf("\033[%d;%dH%s%s ESC / ENTER to dismiss %s", startY+5, startX+(modalWidth-24)/2, hBg, hFg, reset)
 		}
 
+		if showEditorError {
+			modalWidth := 70
+			modalHeight := 8
+			startX := (width - modalWidth) / 2
+			startY := (height - modalHeight) / 2
+
+			hBg := "\033[41m" // Red background
+			hFg := "\033[38;5;15m"
+			hbBg := "\033[41m"
+			hbFg := "\033[38;5;15m"
+
+			for i := 0; i < modalHeight; i++ {
+				fmt.Printf("\033[%d;%dH%s%s%*s%s", startY+i, startX, hBg, hFg, modalWidth, "", reset)
+			}
+			fmt.Printf("\033[%d;%dH%s%s┌%s┐%s", startY, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+			for i := 1; i < modalHeight-1; i++ {
+				fmt.Printf("\033[%d;%dH%s%s│\033[%d;%dH%s%s│%s", startY+i, startX, hbBg, hbFg, startY+i, startX+modalWidth-1, hbBg, hbFg, reset)
+			}
+			fmt.Printf("\033[%d;%dH%s%s└%s┘%s", startY+modalHeight-1, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
+
+			header := "EDITOR ERROR"
+			fmt.Printf("\033[%d;%dH%s%s%s", startY+2, startX+(modalWidth-len(header))/2, hBg, hFg+boldOn, header)
+
+			msg := lastEditorError
+			if len(msg) > modalWidth-4 {
+				msg = msg[:modalWidth-7] + "..."
+			}
+			fmt.Printf("\033[%d;%dH%s%s%s", startY+4, startX+(modalWidth-len(msg))/2, hBg, hFg, msg)
+			fmt.Printf("\033[%d;%dH%s%s ESC / ENTER to dismiss %s", startY+6, startX+(modalWidth-24)/2, hBg, hFg, reset)
+		}
+
 		// 7.5 Create Days Modal (Calendar specific)
 		if showCreateDays {
 			modalWidth := 50
@@ -1495,11 +1528,16 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				}
 				continue
 			}
-
 			if showFolderExistsError {
 				if b[0] == '\r' || b[0] == '\n' || b[0] == 27 {
 					showFolderExistsError = false
-					continue
+				}
+				continue
+			}
+
+			if showEditorError {
+				if b[0] == '\r' || b[0] == '\n' || b[0] == 27 {
+					showEditorError = false
 				}
 				continue
 			}
@@ -1703,7 +1741,11 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						cmd.Stdin = os.Stdin
 						cmd.Stdout = os.Stdout
 						cmd.Stderr = os.Stderr
-						cmd.Run()
+						err = cmd.Run()
+						if err != nil {
+							lastEditorError = fmt.Sprintf("could not launch editor %q: %v", editorCmd, err)
+							showEditorError = true
+						}
 
 						// Refresh after returning from editor - ENSURE BASEDIR IS PHYSICAL
 						// (It should already be if navigation was fixed, but let's be safe)
@@ -1715,7 +1757,6 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						}
 
 						var newFiles []string
-						var err error
 						if isProjectRoot {
 							newFiles, err = ScanProjectResources(baseDir, showHidden)
 						} else if currentResType == "calendar" {
