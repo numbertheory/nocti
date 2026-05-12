@@ -139,10 +139,48 @@ func GetFilePreview(path string, width int) []string {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if len(line) > width {
-			line = line[:width]
+		if len(line) <= width {
+			lines = append(lines, line)
+			continue
 		}
-		lines = append(lines, line)
+
+		// Word wrap logic
+		words := strings.Fields(line)
+		if len(words) == 0 {
+			lines = append(lines, "")
+			continue
+		}
+
+		currentLine := ""
+		for _, word := range words {
+			// If adding this word exceeds width
+			if len(currentLine)+1+len(word) > width && currentLine != "" {
+				lines = append(lines, currentLine)
+				currentLine = ""
+			}
+
+			if len(word) > width {
+				// Handle extremely long words by breaking them
+				if currentLine != "" {
+					lines = append(lines, currentLine)
+					currentLine = ""
+				}
+				for len(word) > width {
+					lines = append(lines, word[:width])
+					word = word[width:]
+				}
+				currentLine = word
+			} else {
+				if currentLine == "" {
+					currentLine = word
+				} else {
+					currentLine += " " + word
+				}
+			}
+		}
+		if currentLine != "" {
+			lines = append(lines, currentLine)
+		}
 	}
 	return lines
 }

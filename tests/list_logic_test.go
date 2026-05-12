@@ -345,8 +345,8 @@ func TestGetFilePreview(t *testing.T) {
 	}
 
 	lines = cmd.GetFilePreview(path, 10)
-	if lines[1] != "Line 2 is " {
-		t.Errorf("Expected 'Line 2 is ', got '%s'", lines[1])
+	if lines[1] != "Line 2 is" {
+		t.Errorf("Expected 'Line 2 is', got '%s'", lines[1])
 	}
 }
 
