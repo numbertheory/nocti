@@ -269,6 +269,40 @@ func TestFindEnclosingResource(t *testing.T) {
 	}
 }
 
+func TestFindEnclosingResourceRoot(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "nocti-root-helper-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	parentDir := filepath.Join(tmpDir, "parent")
+	childDir := filepath.Join(parentDir, "child")
+	os.MkdirAll(childDir, 0755)
+
+	config := struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Type string `json:"type"`
+	}{ID: "123", Name: "My Notebook", Type: "notebook"}
+	data, _ := json.Marshal(config)
+	os.WriteFile(filepath.Join(parentDir, ".nocti.json"), data, 0644)
+
+	foundPath, resConfig, err := cmd.FindEnclosingResourceRoot(childDir)
+	if err != nil {
+		t.Fatalf("FindEnclosingResourceRoot failed: %v", err)
+	}
+
+	absParent, _ := filepath.Abs(parentDir)
+	if foundPath != absParent {
+		t.Errorf("Expected foundPath %s, got %s", absParent, foundPath)
+	}
+
+	if resConfig.ID != "123" || resConfig.Name != "My Notebook" || resConfig.Type != "notebook" {
+		t.Errorf("Resource config incorrect: %+v", resConfig)
+	}
+}
+
 func TestColorHelpers(t *testing.T) {
 	tests := []struct {
 		name     string

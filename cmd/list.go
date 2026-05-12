@@ -376,6 +376,36 @@ func FindEnclosingResourceIn(startDir string) (*ResourceConfig, error) {
 	return nil, fmt.Errorf(".nocti.json not found in parents")
 }
 
+func FindEnclosingResourceRoot(startDir string) (string, *ResourceConfig, error) {
+	wd, err := filepath.Abs(startDir)
+	if err != nil {
+		wd = startDir
+	}
+	for {
+		configPath := filepath.Join(wd, ".nocti.json")
+		if _, err := os.Stat(configPath); err == nil {
+			data, err := os.ReadFile(configPath)
+			if err != nil {
+				return "", nil, err
+			}
+
+			var config ResourceConfig
+			if err := json.Unmarshal(data, &config); err != nil {
+				return "", nil, err
+			}
+
+			return wd, &config, nil
+		}
+
+		parent := filepath.Dir(wd)
+		if parent == wd {
+			break
+		}
+		wd = parent
+	}
+	return "", nil, fmt.Errorf(".nocti.json not found in parents")
+}
+
 func FindEnclosingResource() (string, string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -555,10 +585,17 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 	showHelp := false
 
 	// Creation states
+	type createOption struct {
+		Label    string
+		Type     string // "file", "folder", "notebook", "calendar", "todo", "event", "template"
+		Metadata string // template filename
+	}
+	var currentCreateOptions []createOption
+
 	showCreateType := false
 	showCreateName := false
 	showCreateDays := false
-	createTypeSelected := 0 // 0 = File, 1 = Folder, 2 = Notebook, 3 = Calendar, 4 = Todo
+	createTypeSelected := 0
 	createInputName := ""
 	createInputDays := ""
 
@@ -1040,10 +1077,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		// 6. Create Type Modal
 		if showCreateType {
 			modalWidth := 40
-			modalHeight := 11
-			if effectiveResType == "project" || effectiveResType == "calendar" {
-				modalHeight = 9
-			}
+			modalHeight := 6 + len(currentCreateOptions)
 			startX := (width - modalWidth) / 2
 			startY := (height - modalHeight) / 2
 
@@ -1074,52 +1108,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 			fmt.Printf("\033[%d;%dH%s%s CREATE NEW %s", startY+1, startX+(modalWidth-12)/2, hBg, hFg+boldOn, reset)
 
-			options := []string{" File ", " Folder ", " Notebook ", " Calendar ", " Todo "}
-			if effectiveResType == "todo" {
-				options[0] = " Todo List "
-			}
-
-			if effectiveResType == "calendar" {
-				selectedIsDate := false
-				if len(entries) > 0 {
-					selected := entries[selectedIndex]
-					if _, err := GetDateFromRelPath(selected.RelPath, baseDir); err == nil {
-						selectedIsDate = true
-					} else {
-						// Check if it's a child of a date
-						parts := strings.Split(selected.RelPath, string(os.PathSeparator))
-						if len(parts) > 1 {
-							dayRelPath := parts[0]
-							// Handle multi-year: 2026/May 06/file
-							if len(parts) > 2 && !strings.Contains(parts[0], " ") && strings.Contains(parts[1], " ") {
-								dayRelPath = filepath.Join(parts[0], parts[1])
-							}
-							if _, err := GetDateFromRelPath(dayRelPath, baseDir); err == nil {
-								selectedIsDate = true
-							}
-						}
-					}
-				}
-				if selectedIsDate {
-					options = append(options, " Event ")
-				}
-			}
-
-			displayIdx := 0
-			for i, opt := range options {
-				if (effectiveResType == "project" || effectiveResType == "calendar") && i < 2 {
-					continue
-				}
-				if effectiveResType == "todo" && i == 1 { // Skip "Folder"
-					continue
-				}
-				fmt.Printf("\033[%d;%dH", startY+3+displayIdx, startX+(modalWidth-len(opt))/2)
+			for i, opt := range currentCreateOptions {
+				fmt.Printf("\033[%d;%dH", startY+3+i, startX+(modalWidth-len(opt.Label))/2)
 				if i == createTypeSelected {
-					fmt.Printf("%s%s%s", hBg+hFg+reverseOn, opt, reset+hBg+hFg)
+					fmt.Printf("%s%s%s", hBg+hFg+reverseOn, opt.Label, reset+hBg+hFg)
 				} else {
-					fmt.Printf("%s%s%s", hBg, hFg+opt, reset)
+					fmt.Printf("%s%s%s", hBg, hFg+opt.Label, reset)
 				}
-				displayIdx++
 			}
 			fmt.Printf("\033[%d;%dH%s%s ↑/↓ to select | ENTER to confirm %s", startY+modalHeight-2, startX+(modalWidth-32)/2, hBg, hFg, reset)
 		}
@@ -1157,19 +1152,24 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			fmt.Printf("\033[%d;%dH%s%s└%s┘%s", startY+modalHeight-1, startX, hbBg, hbFg, strings.Repeat("─", modalWidth-2), reset)
 
 			typeStr := "FILE"
-			if effectiveResType == "todo" && createTypeSelected == 0 {
-				typeStr = "TODO LIST"
-			} else {
-				switch createTypeSelected {
-				case 1:
+			if createTypeSelected < len(currentCreateOptions) {
+				opt := currentCreateOptions[createTypeSelected]
+				switch opt.Type {
+				case "file", "template":
+					if effectiveResType == "todo" {
+						typeStr = "TODO LIST"
+					} else {
+						typeStr = "FILE"
+					}
+				case "folder":
 					typeStr = "FOLDER"
-				case 2:
+				case "notebook":
 					typeStr = "NOTEBOOK"
-				case 3:
+				case "calendar":
 					typeStr = "CALENDAR"
-				case 4:
+				case "todo":
 					typeStr = "TODO"
-				case 5:
+				case "event":
 					typeStr = "EVENT"
 				}
 			}
@@ -1370,12 +1370,18 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							}
 						}
 
+						if createTypeSelected >= len(currentCreateOptions) {
+							showCreateName = false
+							continue
+						}
+						selectedOpt := currentCreateOptions[createTypeSelected]
+
 						newName := createInputName
 						fullPath := ""
-						switch createTypeSelected {
-						case 0, 5: // File / Todo List or Event
+						switch selectedOpt.Type {
+						case "file", "event", "template":
 							ext := filepath.Ext(newName)
-							if createTypeSelected == 0 {
+							if selectedOpt.Type == "file" || selectedOpt.Type == "template" {
 								if ext != ".md" && ext != ".txt" {
 									newName += ".md"
 								}
@@ -1385,9 +1391,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 								}
 							}
 							fullPath = filepath.Join(targetDir, newName)
-						case 1: // Folder
+						case "folder":
 							fullPath = filepath.Join(targetDir, newName)
-						case 2, 3, 4: // Notebook, Calendar, Todo
+						case "notebook", "calendar", "todo":
 							fullPath = filepath.Join(targetDir, newName)
 						}
 
@@ -1401,25 +1407,31 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						}
 
 						performCreation = func() {
-							if createTypeSelected == 3 && !showCreateDays {
+							if selectedOpt.Type == "calendar" && !showCreateDays {
 								goToDaysModal()
 								return
 							}
 
 							days := 0
-							if createTypeSelected == 3 {
+							if selectedOpt.Type == "calendar" {
 								fmt.Sscanf(createInputDays, "%d", &days)
 								if days <= 0 {
 									days = 30
 								}
 							}
 
-							switch createTypeSelected {
-							case 0: // File / Todo List
+							switch selectedOpt.Type {
+							case "file", "template":
 								os.MkdirAll(targetDir, 0755)
 
 								content := ""
-								if effectiveResType == "todo" {
+								if selectedOpt.Type == "template" {
+									resRoot, _, _ := FindEnclosingResourceRoot(baseDir)
+									templatePath := filepath.Join(resRoot, ".templates", selectedOpt.Metadata)
+									if data, err := os.ReadFile(templatePath); err == nil {
+										content = string(data)
+									}
+								} else if effectiveResType == "todo" {
 									// Read template
 									templatePath := "templates/todo_template.md"
 									// Try to find it relative to project root if not in CWD
@@ -1436,16 +1448,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 									}
 								}
 								os.WriteFile(fullPath, []byte(content), 0644)
-							case 1: // Folder
+							case "folder":
 								os.MkdirAll(fullPath, 0755)
-							case 2, 3, 4: // Notebook, Calendar, Todo
-								resType := "notebook"
-								if createTypeSelected == 3 {
-									resType = "calendar"
-								}
-								if createTypeSelected == 4 {
-									resType = "todo"
-								}
+							case "notebook", "calendar", "todo":
 								os.MkdirAll(targetDir, 0755)
 								var parentID, parentName string
 								pConfig, err := FindEnclosingResourceIn(targetDir)
@@ -1453,8 +1458,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 									parentID = pConfig.ID
 									parentName = pConfig.Name
 								}
-								CreateResource(resType, targetDir, newName, parentID, parentName, days)
-							case 5: // Event (.md file)
+								CreateResource(selectedOpt.Type, targetDir, newName, parentID, parentName, days)
+							case "event": // Event (.md file)
 								os.MkdirAll(targetDir, 0755)
 								os.WriteFile(fullPath, []byte(""), 0644)
 							}
@@ -1492,7 +1497,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 								pendingCreation = performCreation
 							}
 						} else {
-							if createTypeSelected == 3 {
+							if selectedOpt.Type == "calendar" {
 								goToDaysModal()
 							} else {
 								performCreation()
@@ -1655,21 +1660,79 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			}
 
 			if b[0] == 'n' || b[0] == 'N' {
-				if effectiveResType == "calendar" || effectiveResType == "project" {
+				if len(entries) > 0 {
+					selected := entries[selectedIndex]
+					if selected.Name == ".nocti.json" || selected.Name == "nocti.json" {
+						continue
+					}
+				}
+
+				// Build options
+				currentCreateOptions = []createOption{}
+				if effectiveResType != "project" && effectiveResType != "calendar" {
+					label := " File "
+					if effectiveResType == "todo" {
+						label = " Todo List "
+					}
+					currentCreateOptions = append(currentCreateOptions, createOption{Label: label, Type: "file"})
+					if effectiveResType != "todo" {
+						currentCreateOptions = append(currentCreateOptions, createOption{Label: " Folder ", Type: "folder"})
+					}
+				}
+				currentCreateOptions = append(currentCreateOptions, createOption{Label: " Notebook ", Type: "notebook"})
+				currentCreateOptions = append(currentCreateOptions, createOption{Label: " Calendar ", Type: "calendar"})
+				currentCreateOptions = append(currentCreateOptions, createOption{Label: " Todo ", Type: "todo"})
+
+				if effectiveResType == "calendar" {
+					selectedIsDate := false
 					if len(entries) > 0 {
 						selected := entries[selectedIndex]
-						if selected.Name == ".nocti.json" || selected.Name == "nocti.json" {
-							continue
+						if _, err := GetDateFromRelPath(selected.RelPath, baseDir); err == nil {
+							selectedIsDate = true
+						} else {
+							parts := strings.Split(selected.RelPath, string(os.PathSeparator))
+							if len(parts) > 1 {
+								dayRelPath := parts[0]
+								if len(parts) > 2 && !strings.Contains(parts[0], " ") && strings.Contains(parts[1], " ") {
+									dayRelPath = filepath.Join(parts[0], parts[1])
+								}
+								if _, err := GetDateFromRelPath(dayRelPath, baseDir); err == nil {
+									selectedIsDate = true
+								}
+							}
 						}
 					}
-					showCreateType = true
-					createTypeSelected = 2 // Start at Notebook
-				} else {
-					showCreateType = true
-					if effectiveResType == "todo" {
-						createTypeSelected = 0 // Start at Todo List
-					} else {
-						createTypeSelected = 0 // Start at File
+					if selectedIsDate {
+						currentCreateOptions = append(currentCreateOptions, createOption{Label: " Event ", Type: "event"})
+					}
+				}
+
+				// Add templates
+				resRoot, _, err := FindEnclosingResourceRoot(baseDir)
+				if err == nil {
+					templateDir := filepath.Join(resRoot, ".templates")
+					if entries, err := os.ReadDir(templateDir); err == nil {
+						for _, entry := range entries {
+							if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
+								currentCreateOptions = append(currentCreateOptions, createOption{
+									Label:    " " + entry.Name() + " ",
+									Type:     "template",
+									Metadata: entry.Name(),
+								})
+							}
+						}
+					}
+				}
+
+				showCreateType = true
+				createTypeSelected = 0
+				// If project or calendar, we might want to start at Notebook?
+				if effectiveResType == "project" || effectiveResType == "calendar" {
+					for i, opt := range currentCreateOptions {
+						if opt.Type == "notebook" {
+							createTypeSelected = i
+							break
+						}
 					}
 				}
 				continue
@@ -1797,48 +1860,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			if showCreateType {
 				switch b[2] {
 				case 65: // Up
-					minIdx := 0
-					if effectiveResType == "project" || effectiveResType == "calendar" {
-						minIdx = 2
-					}
-					if createTypeSelected > minIdx {
+					if createTypeSelected > 0 {
 						createTypeSelected--
-						if effectiveResType == "todo" && createTypeSelected == 1 {
-							createTypeSelected = 0
-						}
 					}
 				case 66: // Down
-					maxIdx := 4
-					if effectiveResType == "calendar" {
-						// Check if Event is available (same logic as in drawing)
-						selectedIsDate := false
-						if len(entries) > 0 {
-							selected := entries[selectedIndex]
-							if _, err := GetDateFromRelPath(selected.RelPath, baseDir); err == nil {
-								selectedIsDate = true
-							} else {
-								parts := strings.Split(selected.RelPath, string(os.PathSeparator))
-								if len(parts) > 1 {
-									dayRelPath := parts[0]
-									if len(parts) > 2 && !strings.Contains(parts[0], " ") && strings.Contains(parts[1], " ") {
-										dayRelPath = filepath.Join(parts[0], parts[1])
-									}
-									if _, err := GetDateFromRelPath(dayRelPath, baseDir); err == nil {
-										selectedIsDate = true
-									}
-								}
-							}
-						}
-						if selectedIsDate {
-							maxIdx = 5
-						}
-					}
-
-					if createTypeSelected < maxIdx {
+					if createTypeSelected < len(currentCreateOptions)-1 {
 						createTypeSelected++
-						if effectiveResType == "todo" && createTypeSelected == 1 {
-							createTypeSelected = 2
-						}
 					}
 				}
 				continue
