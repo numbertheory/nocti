@@ -12,6 +12,10 @@ nocti list [resource-name]
 
 The `list` command recursively scans a directory and identifies all `.md` and `.txt` files. It is specifically designed to work with **notebook** resources.
 
+### Interactive Creation
+
+While in interactive mode, you can press **n** to create new files, folders, or sub-resources. If you have defined **templates** for the current resource, they will also appear in this menu. See the [Templates]({{< ref "templates.md" >}}) page for more details.
+
 ### Constraints and Behavior
 
 *   **Markdown and Text Only**: Only files with `.md` or `.txt` extensions are listed.

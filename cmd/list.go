@@ -6,7 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -404,6 +406,62 @@ func FindEnclosingResourceRoot(startDir string) (string, *ResourceConfig, error)
 		wd = parent
 	}
 	return "", nil, fmt.Errorf(".nocti.json not found in parents")
+}
+
+func parseTemplateFrontmatter(raw string) (map[string]string, string) {
+	metadata := make(map[string]string)
+	lines := strings.Split(raw, "\n")
+	separatorIdx := -1
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if len(trimmed) >= 3 && strings.Count(trimmed, "-") == len(trimmed) {
+			separatorIdx = i
+			break
+		}
+		if strings.Contains(line, ":") {
+			parts := strings.SplitN(line, ":", 2)
+			key := strings.TrimSpace(parts[0])
+			val := strings.TrimSpace(parts[1])
+			metadata[key] = val
+		}
+	}
+
+	if separatorIdx == -1 {
+		return nil, raw
+	}
+
+	body := strings.Join(lines[separatorIdx+1:], "\n")
+	return metadata, body
+}
+
+func resolveIncrement(pattern string, targetDir string) string {
+	rePattern := strings.ReplaceAll(regexp.QuoteMeta(pattern), "\\{\\{INC\\}\\}", "(\\d+)")
+	re := regexp.MustCompile("^" + rePattern + "(\\..+)?$")
+
+	maxInc := -1
+	files, _ := os.ReadDir(targetDir)
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		matches := re.FindStringSubmatch(f.Name())
+		if len(matches) > 1 {
+			inc, err := strconv.Atoi(matches[1])
+			if err == nil {
+				if inc > maxInc {
+					maxInc = inc
+				}
+			}
+		}
+	}
+
+	nextInc := maxInc + 1
+	if nextInc < 1 {
+		nextInc = 1
+	}
+
+	return strings.ReplaceAll(pattern, "{{INC}}", strconv.Itoa(nextInc))
 }
 
 func FindEnclosingResource() (string, string, error) {
@@ -1425,11 +1483,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 								os.MkdirAll(targetDir, 0755)
 
 								content := ""
+								metadata := make(map[string]string)
 								if selectedOpt.Type == "template" {
 									resRoot, _, _ := FindEnclosingResourceRoot(baseDir)
 									templatePath := filepath.Join(resRoot, ".templates", selectedOpt.Metadata)
 									if data, err := os.ReadFile(templatePath); err == nil {
-										content = string(data)
+										metadata, content = parseTemplateFrontmatter(string(data))
 									}
 								} else if effectiveResType == "todo" {
 									// Read template
@@ -1441,12 +1500,23 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 									templateData, err := os.ReadFile(templatePath)
 									if err == nil {
-										content = strings.ReplaceAll(string(templateData), "{{NAME}}", strings.TrimSuffix(createInputName, filepath.Ext(createInputName)))
+										content = string(templateData)
 									} else {
 										// Fallback if template file is missing
 										content = fmt.Sprintf("# %s To Do List\n\n- [ ] Sample Task 1\n- [ ] Sample Task 2\n- [ ] Sample Task 3\n", strings.TrimSuffix(createInputName, filepath.Ext(createInputName)))
 									}
 								}
+
+								// Always support {{NAME}} and {{DATE}}
+								nameOnly := strings.TrimSuffix(createInputName, filepath.Ext(createInputName))
+								content = strings.ReplaceAll(content, "{{NAME}}", nameOnly)
+								content = strings.ReplaceAll(content, "{{DATE}}", time.Now().Format("2006-01-02"))
+
+								// Support keys from frontmatter
+								for k, v := range metadata {
+									content = strings.ReplaceAll(content, "{{"+k+"}}", v)
+								}
+
 								os.WriteFile(fullPath, []byte(content), 0644)
 							case "folder":
 								os.MkdirAll(fullPath, 0755)
@@ -1584,6 +1654,38 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					showCreateType = false
 					showCreateName = true
 					createInputName = ""
+
+					// NEW: Pre-fill name from template if possible
+					if createTypeSelected < len(currentCreateOptions) {
+						opt := currentCreateOptions[createTypeSelected]
+						if opt.Type == "template" {
+							targetDir := baseDir
+							if len(entries) > 0 {
+								selected := entries[selectedIndex]
+								physPath := GetPhysicalPath(selected.RelPath, baseDir, currentResType)
+								if selected.IsFile {
+									targetDir = filepath.Join(baseDir, filepath.Dir(physPath))
+								} else {
+									targetDir = filepath.Join(baseDir, physPath)
+								}
+							}
+
+							resRoot, _, _ := FindEnclosingResourceRoot(baseDir)
+							templatePath := filepath.Join(resRoot, ".templates", opt.Metadata)
+							if data, err := os.ReadFile(templatePath); err == nil {
+								metadata, _ := parseTemplateFrontmatter(string(data))
+								if fname, ok := metadata["filename"]; ok {
+									// Support {{DATE}}
+									fname = strings.ReplaceAll(fname, "{{DATE}}", time.Now().Format("2006-01-02"))
+									// Support {{INC}}
+									if strings.Contains(fname, "{{INC}}") {
+										fname = resolveIncrement(fname, targetDir)
+									}
+									createInputName = fname
+								}
+							}
+						}
+					}
 					continue
 				}
 				// Arrow keys are handled in the n >= 3 block

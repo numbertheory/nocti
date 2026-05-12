@@ -25,6 +25,8 @@ If you run `nocti new` while inside another resource's directory, the new resour
 *   `todo`: Create a new todo list.
 *   `calendar`: Create a new calendar.
 
+> **Tip**: For template-based file creation with dynamic placeholders and automated naming, use the interactive creation menu in [nocti list]({{< ref "list.md" >}}). Learn more in the [Templates]({{< ref "templates.md" >}}) documentation.
+
 ## Flags (Global for `new`)
 
 *   `-n, --name string`: The name of the resource to create. If not provided, you will be prompted.
