@@ -340,13 +340,13 @@ func TestGetFilePreview(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("Expected 3 lines, got %d", len(lines))
 	}
-	if lines[1] != "Line 2 is long" {
-		t.Errorf("Expected 'Line 2 is long', got '%s'", lines[1])
+	if lines[1].Text != "Line 2 is long" {
+		t.Errorf("Expected 'Line 2 is long', got '%s'", lines[1].Text)
 	}
 
 	lines = cmd.GetFilePreview(path, 10)
-	if lines[1] != "Line 2 is" {
-		t.Errorf("Expected 'Line 2 is', got '%s'", lines[1])
+	if lines[1].Text != "Line 2 is" {
+		t.Errorf("Expected 'Line 2 is', got '%s'", lines[1].Text)
 	}
 }
 

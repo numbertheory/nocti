@@ -49,7 +49,7 @@ func ScanTodoItems(searchDir string, showHidden bool) ([]string, error) {
 	return results, nil
 }
 
-func GetTodoPreview(path string, width int) []string {
+func GetTodoPreview(path string, width int) []PreviewLine {
 	// For now, use the same as FilePreview
 	return GetFilePreview(path, width)
 }

@@ -128,45 +128,64 @@ func ScanNotebookFiles(searchDir string, showHidden bool) ([]string, error) {
 	return results, nil
 }
 
-func GetFilePreview(path string, width int) []string {
+func GetFilePreview(path string, width int) []PreviewLine {
 	file, err := os.Open(path)
 	if err != nil {
-		return []string{"Error opening file"}
+		return []PreviewLine{{Text: "Error opening file"}}
 	}
 	defer file.Close()
 
-	var lines []string
+	var lines []PreviewLine
 	scanner := bufio.NewScanner(file)
+	lineNo := 1
 	for scanner.Scan() {
 		line := scanner.Text()
 		if len(line) <= width {
-			lines = append(lines, line)
+			lines = append(lines, PreviewLine{Text: line, LineNo: lineNo})
+			lineNo++
 			continue
 		}
 
 		// Word wrap logic
 		words := strings.Fields(line)
 		if len(words) == 0 {
-			lines = append(lines, "")
+			lines = append(lines, PreviewLine{Text: "", LineNo: lineNo})
+			lineNo++
 			continue
 		}
 
 		currentLine := ""
+		isFirst := true
 		for _, word := range words {
 			// If adding this word exceeds width
 			if len(currentLine)+1+len(word) > width && currentLine != "" {
-				lines = append(lines, currentLine)
+				lNo := 0
+				if isFirst {
+					lNo = lineNo
+					isFirst = false
+				}
+				lines = append(lines, PreviewLine{Text: currentLine, LineNo: lNo})
 				currentLine = ""
 			}
 
 			if len(word) > width {
 				// Handle extremely long words by breaking them
 				if currentLine != "" {
-					lines = append(lines, currentLine)
+					lNo := 0
+					if isFirst {
+						lNo = lineNo
+						isFirst = false
+					}
+					lines = append(lines, PreviewLine{Text: currentLine, LineNo: lNo})
 					currentLine = ""
 				}
 				for len(word) > width {
-					lines = append(lines, word[:width])
+					lNo := 0
+					if isFirst {
+						lNo = lineNo
+						isFirst = false
+					}
+					lines = append(lines, PreviewLine{Text: word[:width], LineNo: lNo})
 					word = word[width:]
 				}
 				currentLine = word
@@ -179,8 +198,13 @@ func GetFilePreview(path string, width int) []string {
 			}
 		}
 		if currentLine != "" {
-			lines = append(lines, currentLine)
+			lNo := 0
+			if isFirst {
+				lNo = lineNo
+			}
+			lines = append(lines, PreviewLine{Text: currentLine, LineNo: lNo})
 		}
+		lineNo++
 	}
 	return lines
 }

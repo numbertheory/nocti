@@ -28,6 +28,11 @@ type DisplayEntry struct {
 	TotalTasks   int
 }
 
+type PreviewLine struct {
+	Text   string
+	LineNo int // 0 for continuation
+}
+
 func BuildDisplayEntries(files []string, baseDir string, includeRoot bool, skipSort bool, parentResType string) []DisplayEntry {
 	var entries []DisplayEntry
 	seenDirs := make(map[string]bool)
@@ -609,16 +614,18 @@ func GetColorCode(colorName string, defaultCode string) string {
 
 func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsConfig, editorCmd string, isProjectRoot bool, currentResType string) error {
 	type navState struct {
-		dir            string
-		entries        []DisplayEntry
-		isProjectRoot  bool
-		currentResType string
-		colors         *ColorsConfig
-		editorCmd      string
+		dir             string
+		entries         []DisplayEntry
+		isProjectRoot   bool
+		currentResType  string
+		colors          *ColorsConfig
+		editorCmd       string
+		showLineNumbers bool
 	}
 	var navStack []navState
 
 	showHidden := false
+	showLineNumbers := false
 
 	// Check if stdout is a terminal
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
@@ -885,7 +892,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		}
 
 		// 3. Preview Content
-		var allPreviewLines []string
+		var allPreviewLines []PreviewLine
+		effectivePreviewWidth := previewWidth
+		if showLineNumbers {
+			effectivePreviewWidth -= 6
+		}
+
 		if len(entries) > 0 {
 			selected := entries[selectedIndex]
 			physPath := GetPhysicalPath(selected.RelPath, baseDir, currentResType)
@@ -902,9 +914,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				} else if selected.IsFile {
 					fullPath := filepath.Join(baseDir, physPath)
 					if _, err := os.Stat(fullPath); err == nil {
-						allPreviewLines = GetFilePreview(fullPath, previewWidth)
+						allPreviewLines = GetFilePreview(fullPath, effectivePreviewWidth)
 					} else {
-						allPreviewLines = []string{"[ File not found ]"}
+						allPreviewLines = []PreviewLine{{Text: "[ File not found ]"}}
 					}
 				} else {
 					// Fallthrough for resources within calendar
@@ -918,14 +930,14 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						}
 						json.Unmarshal(data, &config)
 
-						allPreviewLines = append(allPreviewLines, "Resource: "+config.Name)
-						allPreviewLines = append(allPreviewLines, "Type:     "+config.Type)
-						allPreviewLines = append(allPreviewLines, "ID:       "+config.ID)
-						allPreviewLines = append(allPreviewLines, "")
+						allPreviewLines = append(allPreviewLines, PreviewLine{Text: "Resource: " + config.Name})
+						allPreviewLines = append(allPreviewLines, PreviewLine{Text: "Type:     " + config.Type})
+						allPreviewLines = append(allPreviewLines, PreviewLine{Text: "ID:       " + config.ID})
+						allPreviewLines = append(allPreviewLines, PreviewLine{Text: ""})
 
 						if config.Type == "notebook" {
 							files, _ := ScanNotebookFiles(filepath.Join(baseDir, selected.RelPath), false)
-							allPreviewLines = append(allPreviewLines, fmt.Sprintf("Notes:    %d", len(files)))
+							allPreviewLines = append(allPreviewLines, PreviewLine{Text: fmt.Sprintf("Notes:    %d", len(files))})
 						} else if config.Type == "calendar" {
 							// Load calendar-specific config
 							var calConfig struct {
@@ -948,25 +960,25 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							startDate := centerDate.AddDate(0, 0, -calConfig.DaysLength)
 							endDate := centerDate.AddDate(0, 0, calConfig.DaysLength)
 
-							allPreviewLines = append(allPreviewLines, fmt.Sprintf("Range:    %s to %s", startDate.Format("2006-01-02"), endDate.Format("2006-01-02")))
-							allPreviewLines = append(allPreviewLines, fmt.Sprintf("Days:     %d", calConfig.DaysLength*2+1))
+							allPreviewLines = append(allPreviewLines, PreviewLine{Text: fmt.Sprintf("Range:    %s to %s", startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))})
+							allPreviewLines = append(allPreviewLines, PreviewLine{Text: fmt.Sprintf("Days:     %d", calConfig.DaysLength*2+1)})
 						} else {
-							allPreviewLines = append(allPreviewLines, "[ Preview not implemented ]")
+							allPreviewLines = append(allPreviewLines, PreviewLine{Text: "[ Preview not implemented ]"})
 						}
 					} else {
 						if info, err := os.Stat(filepath.Join(baseDir, selected.RelPath)); err == nil && info.IsDir() {
-							allPreviewLines = []string{"Directory: " + selected.RelPath}
+							allPreviewLines = []PreviewLine{{Text: "Directory: " + selected.RelPath}}
 						} else {
-							allPreviewLines = []string{"Error reading resource config"}
+							allPreviewLines = []PreviewLine{{Text: "Error reading resource config"}}
 						}
 					}
 				}
 			} else if selected.IsFile {
 				fullPath := filepath.Join(baseDir, physPath)
 				if _, err := os.Stat(fullPath); err == nil {
-					allPreviewLines = GetFilePreview(fullPath, previewWidth)
+					allPreviewLines = GetFilePreview(fullPath, effectivePreviewWidth)
 				} else {
-					allPreviewLines = []string{"[ File not found ]"}
+					allPreviewLines = []PreviewLine{{Text: "[ File not found ]"}}
 				}
 			} else if isProjectRoot {
 				resConfigPath := filepath.Join(baseDir, physPath, ".nocti.json")
@@ -979,14 +991,14 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					}
 					json.Unmarshal(data, &config)
 
-					allPreviewLines = append(allPreviewLines, "Resource: "+config.Name)
-					allPreviewLines = append(allPreviewLines, "Type:     "+config.Type)
-					allPreviewLines = append(allPreviewLines, "ID:       "+config.ID)
-					allPreviewLines = append(allPreviewLines, "")
+					allPreviewLines = append(allPreviewLines, PreviewLine{Text: "Resource: " + config.Name})
+					allPreviewLines = append(allPreviewLines, PreviewLine{Text: "Type:     " + config.Type})
+					allPreviewLines = append(allPreviewLines, PreviewLine{Text: "ID:       " + config.ID})
+					allPreviewLines = append(allPreviewLines, PreviewLine{Text: ""})
 
 					if config.Type == "notebook" {
 						files, _ := ScanNotebookFiles(filepath.Join(baseDir, selected.RelPath), false)
-						allPreviewLines = append(allPreviewLines, fmt.Sprintf("Notes:    %d", len(files)))
+						allPreviewLines = append(allPreviewLines, PreviewLine{Text: fmt.Sprintf("Notes:    %d", len(files))})
 
 					} else if config.Type == "calendar" {
 						// Load calendar-specific config
@@ -1010,27 +1022,27 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						startDate := centerDate.AddDate(0, 0, -calConfig.DaysLength)
 						endDate := centerDate.AddDate(0, 0, calConfig.DaysLength)
 
-						allPreviewLines = append(allPreviewLines, fmt.Sprintf("Range:    %s to %s", startDate.Format("2006-01-02"), endDate.Format("2006-01-02")))
-						allPreviewLines = append(allPreviewLines, fmt.Sprintf("Days:     %d", calConfig.DaysLength*2+1))
+						allPreviewLines = append(allPreviewLines, PreviewLine{Text: fmt.Sprintf("Range:    %s to %s", startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))})
+						allPreviewLines = append(allPreviewLines, PreviewLine{Text: fmt.Sprintf("Days:     %d", calConfig.DaysLength*2+1)})
 					} else {
-						allPreviewLines = append(allPreviewLines, "[ Not yet implemented ]")
+						allPreviewLines = append(allPreviewLines, PreviewLine{Text: "[ Not yet implemented ]"})
 					}
 				} else {
 					// Check if it's just a regular directory
 					if info, err := os.Stat(filepath.Join(baseDir, selected.RelPath)); err == nil && info.IsDir() {
-						allPreviewLines = []string{"Directory: " + selected.RelPath}
+						allPreviewLines = []PreviewLine{{Text: "Directory: " + selected.RelPath}}
 					} else {
-						allPreviewLines = []string{"Error reading resource config"}
+						allPreviewLines = []PreviewLine{{Text: "Error reading resource config"}}
 					}
 				}
 			} else {
-				allPreviewLines = []string{"Directory: " + selected.RelPath}
+				allPreviewLines = []PreviewLine{{Text: "Directory: " + selected.RelPath}}
 			}
 		} else {
 			if isProjectRoot {
-				allPreviewLines = []string{"No resources found in project root."}
+				allPreviewLines = []PreviewLine{{Text: "No resources found in project root."}}
 			} else {
-				allPreviewLines = []string{"No markdown or text files found.", "", "Press 'n' to create a new file."}
+				allPreviewLines = []PreviewLine{{Text: "No markdown or text files found."}, {Text: ""}, {Text: "Press 'n' to create a new file."}}
 			}
 		}
 
@@ -1046,7 +1058,17 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 		for j := 0; j < contentHeight && (j+previewOffset) < len(allPreviewLines); j++ {
 			pLine := allPreviewLines[j+previewOffset]
-			fmt.Printf("\033[%d;%dH%s", j+headerHeight+1, listWidth+5, pLine)
+			if showLineNumbers {
+				lineNoStr := ""
+				if pLine.LineNo > 0 {
+					lineNoStr = fmt.Sprintf("%3d │ ", pLine.LineNo)
+				} else {
+					lineNoStr = "    │ "
+				}
+				fmt.Printf("\033[%d;%dH%s%s", j+headerHeight+1, listWidth+5, lineNoStr, pLine.Text)
+			} else {
+				fmt.Printf("\033[%d;%dH%s", j+headerHeight+1, listWidth+5, pLine.Text)
+			}
 		}
 
 		// 4. Draw Scrollbar
@@ -1122,6 +1144,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				"  Actions:",
 				"    n          : New File/Folder",
 				"    Ctrl+T     : Toggle Settings/Templates",
+				"    Ctrl+L     : Toggle Line Numbers",
 				"    ENTER      : Edit / Enter Notebook",
 				"    Ctrl+H     : Show Help",
 			}
@@ -1714,6 +1737,10 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				}
 				continue
 			}
+			if b[0] == 12 { // Ctrl+L
+				showLineNumbers = !showLineNumbers
+				continue
+			}
 			if b[0] == 'q' || b[0] == 'Q' || b[0] == 3 {
 				if len(navStack) > 0 {
 					// Pop from stack
@@ -1726,6 +1753,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					currentResType = last.currentResType
 					colors = last.colors
 					editorCmd = last.editorCmd
+					showLineNumbers = last.showLineNumbers
 					showHidden = false // Reset hidden toggle when going back
 					selectedIndex = 0
 					listOffset = 0
@@ -1751,6 +1779,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					currentResType = last.currentResType
 					colors = last.colors
 					editorCmd = last.editorCmd
+					showLineNumbers = last.showLineNumbers
 					showHidden = false // Reset hidden toggle when going back
 					selectedIndex = 0
 					listOffset = 0
@@ -1849,12 +1878,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 					if !selected.IsFile && (selected.ResourceType == "notebook" || selected.ResourceType == "calendar" || selected.ResourceType == "todo") {
 						// Push current state to stack
 						navStack = append(navStack, navState{
-							dir:            baseDir,
-							entries:        entries,
-							isProjectRoot:  isProjectRoot,
-							currentResType: currentResType,
-							colors:         colors,
-							editorCmd:      editorCmd,
+							dir:             baseDir,
+							entries:         entries,
+							isProjectRoot:   isProjectRoot,
+							currentResType:  currentResType,
+							colors:          colors,
+							editorCmd:       editorCmd,
+							showLineNumbers: showLineNumbers,
 						})
 
 						// Jump to resource - ALWAYS USE PHYSICAL PATH
