@@ -27,6 +27,9 @@ While in interactive mode, you can press **n** to create new files, folders, or 
 *   **Resource Boundaries**: If the scan encounters a subdirectory that is its own Nocti resource (contains a `.nocti.json` file), it will **not** recurse into that directory.
 *   **Git Ignored**: The `.git` directory is automatically skipped.
 *   **Toggling Line Numbers**: In the interactive view, you can press **Ctrl+L** to toggle line numbers in the preview pane.
+*   **Link Navigation**: When the preview pane is in focus (press **Tab** to switch focus), you can:
+    *   **Shift+Tab**: Cycle through all detected web links (`http://` or `https://`) in the preview content. The selected link will be highlighted.
+    *   **Enter**: Open the currently selected link in your system's default web browser.
 *   **Context Aware**: 
     *   If run without arguments inside a notebook resource, it lists files in the current directory and its subdirectories.
     *   If run with a `resource-name` argument (from a parent directory), it lists files within that specific resource.

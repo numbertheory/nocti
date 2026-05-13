@@ -692,6 +692,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 	selectedIndex := 0
 	listOffset := 0
 	previewOffset := 0
+	selectedLinkIdx := -1
 	focusList := true // true = List, false = Preview
 	showHelp := false
 
@@ -1092,6 +1093,26 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			}
 		}
 
+		// Link detection for preview pane focus
+		type previewLink struct {
+			link   Link
+			lineNo int
+		}
+		var allLinks []previewLink
+		for i, pLine := range allPreviewLines {
+			links := DetectLinks(pLine.Text)
+			for _, l := range links {
+				allLinks = append(allLinks, previewLink{l, i})
+			}
+		}
+
+		if selectedLinkIdx >= len(allLinks) {
+			selectedLinkIdx = len(allLinks) - 1
+		}
+		if selectedLinkIdx < -1 {
+			selectedLinkIdx = -1
+		}
+
 		// Bound check previewOffset
 		if previewOffset < 0 {
 			previewOffset = 0
@@ -1102,8 +1123,46 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			previewOffset = 0
 		}
 
+		// If a link is selected, ensure it's visible
+		if selectedLinkIdx >= 0 && selectedLinkIdx < len(allLinks) {
+			targetLine := allLinks[selectedLinkIdx].lineNo
+			if targetLine < previewOffset {
+				previewOffset = targetLine
+			} else if targetLine >= previewOffset+contentHeight {
+				previewOffset = targetLine - contentHeight + 1
+			}
+		}
+
 		for j := 0; j < contentHeight && (j+previewOffset) < len(allPreviewLines); j++ {
-			pLine := allPreviewLines[j+previewOffset]
+			pIdx := j + previewOffset
+			pLine := allPreviewLines[pIdx]
+
+			// Highlight links
+			renderedText := pLine.Text
+			lineLinks := DetectLinks(renderedText)
+			if len(lineLinks) > 0 {
+				globalLinkStartIdx := 0
+				for k := 0; k < pIdx; k++ {
+					globalLinkStartIdx += len(DetectLinks(allPreviewLines[k].Text))
+				}
+
+				stripped := StripANSI(renderedText)
+				newRendered := ""
+				lastEnd := 0
+				for k, l := range lineLinks {
+					globalIdx := globalLinkStartIdx + k
+					newRendered += stripped[lastEnd:l.Start]
+					if globalIdx == selectedLinkIdx && !focusList {
+						newRendered += "\033[4;34;7m" + stripped[l.Start:l.End] + "\033[24;39;27m"
+					} else {
+						newRendered += "\033[4;34m" + stripped[l.Start:l.End] + "\033[24;39m"
+					}
+					lastEnd = l.End
+				}
+				newRendered += stripped[lastEnd:]
+				renderedText = newRendered
+			}
+
 			if showLineNumbers {
 				lineNoStr := ""
 				if pLine.LineNo > 0 {
@@ -1111,9 +1170,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				} else {
 					lineNoStr = "    │ "
 				}
-				fmt.Printf("\033[%d;%dH%s%s", j+headerHeight+1, listWidth+5, lineNoStr, pLine.Text)
+				fmt.Printf("\033[%d;%dH%s%s", j+headerHeight+1, listWidth+5, lineNoStr, renderedText)
 			} else {
-				fmt.Printf("\033[%d;%dH%s", j+headerHeight+1, listWidth+5, pLine.Text)
+				fmt.Printf("\033[%d;%dH%s", j+headerHeight+1, listWidth+5, renderedText)
 			}
 		}
 
@@ -1917,8 +1976,18 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 
 			if b[0] == '\t' {
 				focusList = !focusList
+				if focusList {
+					selectedLinkIdx = -1
+				}
 			}
 			if b[0] == '\r' || b[0] == '\n' {
+				if !focusList && selectedLinkIdx >= 0 {
+					// Open selected link
+					if selectedLinkIdx < len(allLinks) {
+						OpenURL(allLinks[selectedLinkIdx].link.URL)
+					}
+					continue
+				}
 				if len(entries) > 0 {
 					selected := entries[selectedIndex]
 					if !selected.IsFile && (selected.ResourceType == "notebook" || selected.ResourceType == "calendar" || selected.ResourceType == "todo") {
@@ -2035,6 +2104,15 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			isEnd := b[2] == 70 || (n >= 4 && b[2] == 52 && b[3] == 126)
 			isUp := b[2] == 65
 			isDown := b[2] == 66
+			isShiftTab := b[2] == 90
+
+			if isShiftTab && !focusList {
+				if len(allLinks) > 0 {
+					selectedLinkIdx = (selectedLinkIdx + 1) % len(allLinks)
+				}
+				continue
+			}
+
 			if showCreateType {
 				switch b[2] {
 				case 65: // Up
@@ -2057,6 +2135,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							selectedIndex = 0
 						}
 						previewOffset = 0
+						selectedLinkIdx = -1
 						if selectedIndex < listOffset {
 							listOffset = selectedIndex
 						}
@@ -2066,6 +2145,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							selectedIndex = len(entries) - 1
 						}
 						previewOffset = 0
+						selectedLinkIdx = -1
 						if selectedIndex >= listOffset+contentHeight {
 							listOffset = selectedIndex - contentHeight + 1
 						}
@@ -2074,6 +2154,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							selectedIndex--
 						}
 						previewOffset = 0
+						selectedLinkIdx = -1
 						if selectedIndex < listOffset {
 							listOffset = selectedIndex
 						}
@@ -2082,6 +2163,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							selectedIndex++
 						}
 						previewOffset = 0
+						selectedLinkIdx = -1
 						if selectedIndex >= listOffset+contentHeight {
 							listOffset = selectedIndex - contentHeight + 1
 						}
@@ -2089,12 +2171,14 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						selectedIndex = 0
 						listOffset = 0
 						previewOffset = 0
+						selectedLinkIdx = -1
 					} else if isEnd {
 						selectedIndex = len(entries) - 1
 						if selectedIndex < 0 {
 							selectedIndex = 0
 						}
 						previewOffset = 0
+						selectedLinkIdx = -1
 						if selectedIndex >= contentHeight {
 							listOffset = selectedIndex - contentHeight + 1
 						}
@@ -2106,18 +2190,22 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 						if previewOffset > 0 {
 							previewOffset--
 						}
+						selectedLinkIdx = -1
 					case 66: // Down
 						if previewOffset < len(allPreviewLines)-contentHeight {
 							previewOffset++
 						}
+						selectedLinkIdx = -1
 					case 53: // PgUp (ESC [ 5 ~)
 						if n >= 4 && b[3] == 126 {
 							previewOffset -= contentHeight
 						}
+						selectedLinkIdx = -1
 					case 54: // PgDn (ESC [ 6 ~)
 						if n >= 4 && b[3] == 126 {
 							previewOffset += contentHeight
 						}
+						selectedLinkIdx = -1
 					}
 				}
 			}
