@@ -612,6 +612,52 @@ func GetColorCode(colorName string, defaultCode string) string {
 	return defaultCode
 }
 
+func ProcessHighlights(text string) string {
+	// Matches [:color1:color2: text] or [:color1: text]
+	re := regexp.MustCompile(`\[:([a-zA-Z0-9]+):(?:([a-zA-Z0-9]+):)?\s*(.*?)\]`)
+	return re.ReplaceAllStringFunc(text, func(match string) string {
+		parts := re.FindStringSubmatch(match)
+		if len(parts) < 4 {
+			return match
+		}
+
+		var fgCode, bgCode, content string
+
+		if parts[2] != "" {
+			// Format: [:fg:bg: content]
+			fgCode = GetFGColorCode(parts[1], "")
+			bgCode = GetColorCode(parts[2], "")
+			content = parts[3]
+		} else {
+			// Format: [:bg: content]
+			bgCode = GetColorCode(parts[1], "")
+			content = parts[3]
+		}
+
+		if fgCode == "" && bgCode == "" {
+			return match
+		}
+
+		res := ""
+		if fgCode != "" {
+			res += fgCode
+		}
+		if bgCode != "" {
+			res += bgCode
+		}
+		res += content
+
+		// Reset both FG and BG
+		if fgCode != "" {
+			res += "\033[39m"
+		}
+		if bgCode != "" {
+			res += "\033[49m"
+		}
+		return res
+	})
+}
+
 func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsConfig, editorCmd string, isProjectRoot bool, currentResType string) error {
 	type navState struct {
 		dir             string

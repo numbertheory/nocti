@@ -140,7 +140,9 @@ func GetFilePreview(path string, width int) []PreviewLine {
 	lineNo := 1
 	for scanner.Scan() {
 		line := scanner.Text()
-		if len(line) <= width {
+		line = ProcessHighlights(line)
+
+		if VisibleLen(line) <= width {
 			lines = append(lines, PreviewLine{Text: line, LineNo: lineNo})
 			lineNo++
 			continue
@@ -158,7 +160,7 @@ func GetFilePreview(path string, width int) []PreviewLine {
 		isFirst := true
 		for _, word := range words {
 			// If adding this word exceeds width
-			if len(currentLine)+1+len(word) > width && currentLine != "" {
+			if VisibleLen(currentLine)+1+VisibleLen(word) > width && currentLine != "" {
 				lNo := 0
 				if isFirst {
 					lNo = lineNo
@@ -168,7 +170,7 @@ func GetFilePreview(path string, width int) []PreviewLine {
 				currentLine = ""
 			}
 
-			if len(word) > width {
+			if VisibleLen(word) > width {
 				// Handle extremely long words by breaking them
 				if currentLine != "" {
 					lNo := 0
@@ -179,12 +181,18 @@ func GetFilePreview(path string, width int) []PreviewLine {
 					lines = append(lines, PreviewLine{Text: currentLine, LineNo: lNo})
 					currentLine = ""
 				}
-				for len(word) > width {
+
+				// This is tricky with ANSI codes in word.
+				// For now, if a word with ANSI is too long, we might break the ANSI code.
+				// But highlights usually wrap words.
+				for VisibleLen(word) > width {
 					lNo := 0
 					if isFirst {
 						lNo = lineNo
 						isFirst = false
 					}
+
+					// Simple break - might break ANSI
 					lines = append(lines, PreviewLine{Text: word[:width], LineNo: lNo})
 					word = word[width:]
 				}
@@ -197,6 +205,7 @@ func GetFilePreview(path string, width int) []PreviewLine {
 				}
 			}
 		}
+
 		if currentLine != "" {
 			lNo := 0
 			if isFirst {

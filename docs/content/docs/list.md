@@ -19,8 +19,14 @@ While in interactive mode, you can press **n** to create new files, folders, or 
 ### Constraints and Behavior
 
 *   **Markdown and Text Only**: Only files with `.md` or `.txt` extensions are listed.
+*   **Highlighting**: You can add custom background and foreground colors to text in your files using a special syntax that the preview pane interprets.
+    *   **Background only**: `[:background-color: Your text here]`
+    *   **Foreground and Background**: `[:foreground-color:background-color: Your text here]`
+    *   Example: `[:black:yellow: This is important!]`
+    *   Colors match the names available for [Customization](#available-color-keys).
 *   **Resource Boundaries**: If the scan encounters a subdirectory that is its own Nocti resource (contains a `.nocti.json` file), it will **not** recurse into that directory.
 *   **Git Ignored**: The `.git` directory is automatically skipped.
+*   **Toggling Line Numbers**: In the interactive view, you can press **Ctrl+L** to toggle line numbers in the preview pane.
 *   **Context Aware**: 
     *   If run without arguments inside a notebook resource, it lists files in the current directory and its subdirectories.
     *   If run with a `resource-name` argument (from a parent directory), it lists files within that specific resource.
