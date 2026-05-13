@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"sort"
 )
 
 // StripANSI removes ANSI escape codes from a string to get its visible length.
@@ -18,33 +19,141 @@ func VisibleLen(text string) int {
 	return len(StripANSI(text))
 }
 
-// Link represents a detected URL in the text.
-type Link struct {
-	URL   string
-	Start int // Visible start index
-	End   int // Visible end index
+// VisibleLenWithLinks returns the length of the string as it will appear in the preview,
+// accounting for both ANSI codes and hidden URL parts of Markdown links.
+func VisibleLenWithLinks(text string) int {
+	stripped := StripANSI(text)
+
+	// Detect Markdown links and subtract the length of the bracket/URL parts
+	markdownRe := regexp.MustCompile(`\[([^\]]+)\]\((https?://[^\s)\]]+)\)`)
+	matches := markdownRe.FindAllStringSubmatch(stripped, -1)
+
+	totalVisible := len(stripped)
+	for _, m := range matches {
+		fullMatchLen := len(m[0])
+		textPartLen := len(m[1])
+		// We hide the brackets and the (url) part
+		totalVisible -= (fullMatchLen - textPartLen)
+	}
+
+	return totalVisible
 }
 
-// DetectLinks finds all HTTP/HTTPS URLs in the text (ignoring ANSI codes for positioning).
+// Link represents a detected URL in the text.
+type Link struct {
+	URL         string
+	DisplayText string
+	Start       int // Visible start index
+	End         int // Visible end index
+	IsMarkdown  bool
+}
+
+// DetectLinks finds all HTTP/HTTPS URLs and Markdown links in the text (ignoring ANSI codes for positioning).
 func DetectLinks(text string) []Link {
-	// Simple regex for URLs
-	re := regexp.MustCompile(`https?://[^\s)\]]+`)
-
-	// We need to map positions in the stripped string back to something useful,
-	// but since we render the string WITH ANSI codes, it's easier to just strip
-	// and find links, then when we render, we can highlight them.
 	stripped := StripANSI(text)
-	matches := re.FindAllStringIndex(stripped, -1)
-
 	var links []Link
-	for _, m := range matches {
+
+	// 1. Detect Markdown links: [text](url)
+	markdownRe := regexp.MustCompile(`\[([^\]]+)\]\((https?://[^\s)\]]+)\)`)
+	mdMatches := markdownRe.FindAllStringSubmatchIndex(stripped, -1)
+
+	// We'll keep track of which parts of the stripped string are "consumed" by markdown links
+	// to avoid double-detecting bare URLs inside them.
+	consumed := make([]bool, len(stripped))
+
+	for _, m := range mdMatches {
+		fullStart, fullEnd := m[0], m[1]
+		textStart, textEnd := m[2], m[3]
+		urlStart, urlEnd := m[4], m[5]
+
 		links = append(links, Link{
-			URL:   stripped[m[0]:m[1]],
-			Start: m[0],
-			End:   m[1],
+			URL:         stripped[urlStart:urlEnd],
+			DisplayText: stripped[textStart:textEnd],
+			Start:       fullStart,
+			End:         fullEnd,
+			IsMarkdown:  true,
+		})
+		for i := fullStart; i < fullEnd; i++ {
+			consumed[i] = true
+		}
+	}
+
+	// 2. Detect Bare URLs: https?://...
+	bareRe := regexp.MustCompile(`https?://[^\s)\]]+`)
+	bareMatches := bareRe.FindAllStringIndex(stripped, -1)
+
+	for _, m := range bareMatches {
+		// Check if this bare URL was already part of a markdown link
+		if consumed[m[0]] {
+			continue
+		}
+
+		links = append(links, Link{
+			URL:         stripped[m[0]:m[1]],
+			DisplayText: stripped[m[0]:m[1]],
+			Start:       m[0],
+			End:         m[1],
+			IsMarkdown:  false,
 		})
 	}
+
+	// Sort links by start position
+	sort.Slice(links, func(i, j int) bool {
+		return links[i].Start < links[j].Start
+	})
+
 	return links
+}
+
+// RenderedLine contains the final display string and the adjusted link positions.
+type RenderedLine struct {
+	Display string
+	Links   []Link
+}
+
+// PrepareLineForDisplay processes a line to handle Markdown links and ANSI codes,
+// returning the display string and adjusted link positions for interaction.
+func PrepareLineForDisplay(text string, isSelected bool, selectedLinkIdx int, globalLinkStartIdx int) RenderedLine {
+	links := DetectLinks(text)
+	stripped := StripANSI(text)
+
+	display := ""
+	var adjustedLinks []Link
+	lastEnd := 0
+
+	for i, l := range links {
+		// Add text before link
+		display += stripped[lastEnd:l.Start]
+
+		newStart := len(display)
+		globalIdx := globalLinkStartIdx + i
+
+		linkDisplay := l.DisplayText
+
+		// Apply highlighting
+		if globalIdx == selectedLinkIdx && isSelected {
+			display += "\033[4;34;7m" + linkDisplay + "\033[24;39;27m"
+		} else {
+			display += "\033[4;34m" + linkDisplay + "\033[24;39m"
+		}
+
+		newEnd := len(display)
+
+		adjustedLinks = append(adjustedLinks, Link{
+			URL:         l.URL,
+			DisplayText: l.DisplayText,
+			Start:       newStart,
+			End:         newEnd,
+		})
+
+		lastEnd = l.End
+	}
+	display += stripped[lastEnd:]
+
+	return RenderedLine{
+		Display: display,
+		Links:   adjustedLinks,
+	}
 }
 
 // OpenURL opens the given URL in the default system browser.

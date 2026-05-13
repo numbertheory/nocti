@@ -1099,10 +1099,27 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			lineNo int
 		}
 		var allLinks []previewLink
+
+		// Pre-process all lines to detect links and calculate their display length
+		// This is important because Markdown links change the line length.
+		type processedPreviewLine struct {
+			display string
+			links   []Link
+			lineNo  int
+		}
+		var processedLines []processedPreviewLine
+
+		globalLinkCount := 0
 		for i, pLine := range allPreviewLines {
-			links := DetectLinks(pLine.Text)
-			for _, l := range links {
+			lineLinks := DetectLinks(pLine.Text)
+			processedLines = append(processedLines, processedPreviewLine{
+				display: "", // will be set during rendering for current view
+				links:   lineLinks,
+				lineNo:  pLine.LineNo,
+			})
+			for _, l := range lineLinks {
 				allLinks = append(allLinks, previewLink{l, i})
+				globalLinkCount++
 			}
 		}
 
@@ -1137,31 +1154,12 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			pIdx := j + previewOffset
 			pLine := allPreviewLines[pIdx]
 
-			// Highlight links
-			renderedText := pLine.Text
-			lineLinks := DetectLinks(renderedText)
-			if len(lineLinks) > 0 {
-				globalLinkStartIdx := 0
-				for k := 0; k < pIdx; k++ {
-					globalLinkStartIdx += len(DetectLinks(allPreviewLines[k].Text))
-				}
-
-				stripped := StripANSI(renderedText)
-				newRendered := ""
-				lastEnd := 0
-				for k, l := range lineLinks {
-					globalIdx := globalLinkStartIdx + k
-					newRendered += stripped[lastEnd:l.Start]
-					if globalIdx == selectedLinkIdx && !focusList {
-						newRendered += "\033[4;34;7m" + stripped[l.Start:l.End] + "\033[24;39;27m"
-					} else {
-						newRendered += "\033[4;34m" + stripped[l.Start:l.End] + "\033[24;39m"
-					}
-					lastEnd = l.End
-				}
-				newRendered += stripped[lastEnd:]
-				renderedText = newRendered
+			globalLinkStartIdx := 0
+			for k := 0; k < pIdx; k++ {
+				globalLinkStartIdx += len(processedLines[k].links)
 			}
+
+			rendered := PrepareLineForDisplay(pLine.Text, !focusList, selectedLinkIdx, globalLinkStartIdx)
 
 			if showLineNumbers {
 				lineNoStr := ""
@@ -1170,9 +1168,9 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				} else {
 					lineNoStr = "    │ "
 				}
-				fmt.Printf("\033[%d;%dH%s%s", j+headerHeight+1, listWidth+5, lineNoStr, renderedText)
+				fmt.Printf("\033[%d;%dH%s%s", j+headerHeight+1, listWidth+5, lineNoStr, rendered.Display)
 			} else {
-				fmt.Printf("\033[%d;%dH%s", j+headerHeight+1, listWidth+5, renderedText)
+				fmt.Printf("\033[%d;%dH%s", j+headerHeight+1, listWidth+5, rendered.Display)
 			}
 		}
 
