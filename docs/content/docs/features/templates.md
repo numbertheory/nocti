@@ -1,6 +1,6 @@
 ---
 title: "Templates"
-weight: 60
+weight: 2
 ---
 
 # Templates

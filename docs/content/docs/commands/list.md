@@ -1,3 +1,8 @@
+---
+title: "List"
+weight: 2
+---
+
 # `nocti list`
 
 The `list` command displays the content of a notebook resource.

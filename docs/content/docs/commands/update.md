@@ -1,3 +1,8 @@
+---
+title: "Update"
+weight: 4
+---
+
 # `nocti update`
 
 The `update` command synchronizes the central `.nocti/nocti.json` registry with the actual resource directories present in the project.
