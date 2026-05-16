@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // StripANSI removes ANSI escape codes from a string to get its visible length.
@@ -20,29 +21,31 @@ func StripANSI(text string) string {
 }
 
 // StripANSIWithMapping removes ANSI escape codes and returns the stripped string
-// along with a mapping from stripped indices to original indices.
+// along with a mapping from stripped RUNE indices to original BYTE indices.
 func StripANSIWithMapping(text string) (string, []int) {
 	// Combined regex for standard ANSI and OSC 8
 	re := regexp.MustCompile(`\033\[[0-9;]*[mK]|\033\]8;;.*?\033\\`)
 	matches := re.FindAllStringIndex(text, -1)
 
 	var stripped strings.Builder
-	mapping := make([]int, 0, len(text))
+	mapping := make([]int, 0, utf8.RuneCountInString(text))
 
 	lastEnd := 0
 	for _, m := range matches {
 		start, end := m[0], m[1]
 		// Text before the ANSI code
-		for i := lastEnd; i < start; i++ {
-			mapping = append(mapping, i)
-			stripped.WriteByte(text[i])
+		before := text[lastEnd:start]
+		for i, r := range before {
+			mapping = append(mapping, lastEnd+i)
+			stripped.WriteRune(r)
 		}
 		lastEnd = end
 	}
 	// Remaining text
-	for i := lastEnd; i < len(text); i++ {
-		mapping = append(mapping, i)
-		stripped.WriteByte(text[i])
+	remaining := text[lastEnd:]
+	for i, r := range remaining {
+		mapping = append(mapping, lastEnd+i)
+		stripped.WriteRune(r)
 	}
 	// Map the end of the string as well
 	mapping = append(mapping, len(text))
@@ -50,9 +53,9 @@ func StripANSIWithMapping(text string) (string, []int) {
 	return stripped.String(), mapping
 }
 
-// VisibleLen returns the length of the string without ANSI escape codes.
+// VisibleLen returns the number of visual columns occupied by the string (ignoring ANSI).
 func VisibleLen(text string) int {
-	return len(StripANSI(text))
+	return utf8.RuneCountInString(StripANSI(text))
 }
 
 // VisibleLenWithLinks returns the length of the string as it will appear in the preview,
@@ -64,10 +67,10 @@ func VisibleLenWithLinks(text string) int {
 	markdownRe := regexp.MustCompile(`\[([^\]]+)\]\((https?://[^\s)]+?)(?:\s+"[^"]*")?\)`)
 	matches := markdownRe.FindAllStringSubmatch(stripped, -1)
 
-	totalVisible := len(stripped)
+	totalVisible := utf8.RuneCountInString(stripped)
 	for _, m := range matches {
-		fullMatchLen := len(m[0])
-		textPartLen := len(m[1])
+		fullMatchLen := utf8.RuneCountInString(m[0])
+		textPartLen := utf8.RuneCountInString(m[1])
 		// We hide the brackets and the (url) part
 		totalVisible -= (fullMatchLen - textPartLen)
 	}

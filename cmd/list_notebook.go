@@ -135,11 +135,23 @@ func GetFilePreview(path string, width int) []PreviewLine {
 	}
 	defer file.Close()
 
-	var lines []PreviewLine
+	var rawLines []string
 	scanner := bufio.NewScanner(file)
-	lineNo := 1
 	for scanner.Scan() {
-		line := scanner.Text()
+		rawLines = append(rawLines, scanner.Text())
+	}
+
+	formattedLines := FormatTables(rawLines)
+
+	var lines []PreviewLine
+	lineNo := 1
+	for _, line := range formattedLines {
+		// Detect if this is a table row (starts and ends with box drawing or pipe)
+		isTable := (strings.HasPrefix(line, "│") && strings.HasSuffix(line, "│")) ||
+			(strings.HasPrefix(line, "┌") && strings.HasSuffix(line, "┐")) ||
+			(strings.HasPrefix(line, "├") && strings.HasSuffix(line, "┤")) ||
+			(strings.HasPrefix(line, "└") && strings.HasSuffix(line, "┘"))
+
 		line = ProcessHighlights(line)
 
 		if VisibleLenWithLinks(line) <= width {
@@ -148,7 +160,42 @@ func GetFilePreview(path string, width int) []PreviewLine {
 			continue
 		}
 
-		// Word wrap logic
+		if isTable {
+			// Truncate table rows instead of wrapping
+			// We need to be careful with ANSI codes when truncating.
+			vLen := VisibleLenWithLinks(line)
+			if vLen > width {
+				_, mapping := StripANSIWithMapping(line)
+
+				// Ensure we don't exceed mapping bounds
+				truncIdx := width - 3
+				if truncIdx < 0 {
+					truncIdx = 0
+				}
+				if truncIdx >= len(mapping) {
+					truncIdx = len(mapping) - 1
+				}
+
+				truncated := line[:mapping[truncIdx]] + "..."
+				// Close the table border if it was a data row
+				if strings.HasSuffix(line, "│") {
+					truncated += "│"
+				} else if strings.HasSuffix(line, "┐") {
+					truncated += "┐"
+				} else if strings.HasSuffix(line, "┤") {
+					truncated += "┤"
+				} else if strings.HasSuffix(line, "┘") {
+					truncated += "┘"
+				}
+				lines = append(lines, PreviewLine{Text: truncated, LineNo: lineNo})
+			} else {
+				lines = append(lines, PreviewLine{Text: line, LineNo: lineNo})
+			}
+			lineNo++
+			continue
+		}
+
+		// Word wrap logic for non-table lines
 		words := strings.Fields(line)
 		if len(words) == 0 {
 			lines = append(lines, PreviewLine{Text: "", LineNo: lineNo})
