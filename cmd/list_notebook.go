@@ -79,7 +79,10 @@ func ScanNotebookFiles(searchDir string, showHidden bool) ([]string, error) {
 		}
 
 		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".md" || ext == ".txt" {
+		if ext == ".md" || ext == ".txt" || ext == ".json" {
+			if !showHidden && strings.HasPrefix(d.Name(), ".") {
+				return nil
+			}
 			relPath, err := filepath.Rel(searchDir, path)
 			if err == nil {
 				results = append(results, relPath)
@@ -142,10 +145,15 @@ func GetFilePreview(path string, width int) []PreviewLine {
 	}
 
 	formattedLines := FormatTables(rawLines)
+	isJSON := strings.ToLower(filepath.Ext(path)) == ".json"
 
 	var lines []PreviewLine
 	lineNo := 1
 	for _, line := range formattedLines {
+		if isJSON {
+			line = ColorizeJSON(line)
+		}
+
 		// Detect if this is a table row (starts and ends with box drawing or pipe)
 		isTable := (strings.HasPrefix(line, "│") && strings.HasSuffix(line, "│")) ||
 			(strings.HasPrefix(line, "┌") && strings.HasSuffix(line, "┐")) ||
