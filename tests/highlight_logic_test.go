@@ -68,4 +68,15 @@ func TestPrepareLineForDisplayPreservesHighlights(t *testing.T) {
 	if !strings.Contains(rendered.Display, "link") || strings.Contains(rendered.Display, "http://example.com") {
 		t.Errorf("Link was not correctly processed in rendered output: %q", rendered.Display)
 	}
+
+	// Verify the URL and IsMarkdown in adjustedLinks
+	if len(rendered.Links) != 1 {
+		t.Fatalf("Expected 1 adjusted link, got %d", len(rendered.Links))
+	}
+	if rendered.Links[0].URL != "http://example.com" {
+		t.Errorf("Expected adjusted link URL http://example.com, got %q", rendered.Links[0].URL)
+	}
+	if !rendered.Links[0].IsMarkdown {
+		t.Errorf("Expected IsMarkdown to be true for adjusted link")
+	}
 }

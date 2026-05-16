@@ -175,6 +175,7 @@ func PrepareLineForDisplay(text string, isSelected bool, selectedLinkIdx int, gl
 			DisplayText: l.DisplayText,
 			Start:       newStart,
 			End:         newEnd,
+			IsMarkdown:  l.IsMarkdown,
 		})
 
 		lastEndInOrig = mapping[l.End]
