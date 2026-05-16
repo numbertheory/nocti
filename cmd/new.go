@@ -37,22 +37,30 @@ type Todo Resource
 type Calendar Resource
 
 type ColorsConfig struct {
-	FileListBg    string `json:"file_list_bg,omitempty"`
-	FileListFg    string `json:"file_list_fg,omitempty"`
-	PreviewPaneBg string `json:"preview_pane_bg,omitempty"`
-	PreviewPaneFg string `json:"preview_pane_fg,omitempty"`
-	HelpBg        string `json:"help_bg,omitempty"`
-	HelpFg        string `json:"help_fg,omitempty"`
-	HelpBorderBg  string `json:"help_border_bg,omitempty"`
-	HelpBorderFg  string `json:"help_border_fg,omitempty"`
-	NotebookFg    string `json:"nocti_notebook_fg,omitempty"`
-	NotebookBg    string `json:"nocti_notebook_bg,omitempty"`
-	CalendarFg    string `json:"nocti_calendar_fg,omitempty"`
-	CalendarBg    string `json:"nocti_calendar_bg,omitempty"`
-	HolidayFg     string `json:"calendar_holiday_fg,omitempty"`
-	HolidayBg     string `json:"calendar_holiday_bg,omitempty"`
-	TodoFg        string `json:"nocti_todo_fg,omitempty"`
-	TodoBg        string `json:"nocti_todo_bg,omitempty"`
+	FileListBg        string `json:"file_list_bg,omitempty"`
+	FileListFg        string `json:"file_list_fg,omitempty"`
+	PreviewPaneBg     string `json:"preview_pane_bg,omitempty"`
+	PreviewPaneFg     string `json:"preview_pane_fg,omitempty"`
+	HelpBg            string `json:"help_bg,omitempty"`
+	HelpFg            string `json:"help_fg,omitempty"`
+	HelpBorderBg      string `json:"help_border_bg,omitempty"`
+	HelpBorderFg      string `json:"help_border_fg,omitempty"`
+	NotebookFg        string `json:"nocti_notebook_fg,omitempty"`
+	NotebookBg        string `json:"nocti_notebook_bg,omitempty"`
+	CalendarFg        string `json:"nocti_calendar_fg,omitempty"`
+	CalendarBg        string `json:"nocti_calendar_bg,omitempty"`
+	HolidayFg         string `json:"calendar_holiday_fg,omitempty"`
+	HolidayBg         string `json:"calendar_holiday_bg,omitempty"`
+	TodoFg            string `json:"nocti_todo_fg,omitempty"`
+	TodoBg            string `json:"nocti_todo_bg,omitempty"`
+	SearchHighlightFg string `json:"search_highlight_fg,omitempty"`
+	SearchHighlightBg string `json:"search_highlight_bg,omitempty"`
+	SearchLnFg        string `json:"search_ln_fg,omitempty"`
+	SearchLnBg        string `json:"search_ln_bg,omitempty"`
+	SearchFileFg      string `json:"search_file_fg,omitempty"`
+	SearchFileBg      string `json:"search_file_bg,omitempty"`
+	SearchScoreFg     string `json:"search_score_fg,omitempty"`
+	SearchScoreBg     string `json:"search_score_bg,omitempty"`
 }
 
 // FullConfig to include all resource types
