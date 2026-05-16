@@ -12,9 +12,17 @@ GREEN=\033[0;32m
 BLUE=\033[0;34m
 NC=\033[0m # No Color
 
-.PHONY: all build install clean test coverage help
+.PHONY: all build install clean test coverage help docs docs-serve
 
 all: build
+
+docs:
+	@echo "Building documentation with Hugo..."
+	@hugo --source docs
+
+docs-serve:
+	@echo "Serving documentation locally..."
+	@hugo server --source docs
 
 build:
 	@echo "Building $(BINARY_NAME) $(VERSION) into $(BUILD_DIR)..."
@@ -57,9 +65,11 @@ clean:
 
 help:
 	@echo "Usage:"
-	@echo "  make build    - Build the binary in $(BUILD_DIR)/"
-	@echo "  make test     - Run unit tests with terminal coverage report"
-	@echo "  make coverage - Run unit tests and open HTML coverage report"
-	@echo "  make install  - Build and move the binary to $(INSTALL_DIR)"
-	@echo "  make clean    - Remove build artifacts"
-	@echo "  make help     - Show this help message"
+	@echo "  make build      - Build the binary in $(BUILD_DIR)/"
+	@echo "  make test       - Run unit tests with terminal coverage report"
+	@echo "  make coverage   - Run unit tests and open HTML coverage report"
+	@echo "  make install    - Build and move the binary to $(INSTALL_DIR)"
+	@echo "  make clean      - Remove build artifacts"
+	@echo "  make docs       - Build documentation with Hugo"
+	@echo "  make docs-serve - Serve documentation locally with Hugo"
+	@echo "  make help       - Show this help message"

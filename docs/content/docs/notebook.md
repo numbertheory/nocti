@@ -27,23 +27,14 @@ The following color names are supported (assuming your terminal has 256-color su
 | `black` | `red` | `green` | `yellow` |
 | :--- | :--- | :--- | :--- |
 | `blue` | `magenta` | `cyan` | `white` |
-| :--- | :--- | :--- | :--- |
 | `gray` | `darkgray` | `lightgray` | `silver` |
-| :--- | :--- | :--- | :--- |
 | `brightred` | `brightgreen` | `brightyellow` | `brightblue` |
-| :--- | :--- | :--- | :--- |
 | `brightmagenta` | `brightcyan` | `brightwhite` | `orange` |
-| :--- | :--- | :--- | :--- |
 | `darkorange` | `pink` | `hotpink` | `purple` |
-| :--- | :--- | :--- | :--- |
 | `violet` | `brown` | `navy` | `teal` |
-| :--- | :--- | :--- | :--- |
 | `olive` | `maroon` | `aqua` | `fuchsia` |
-| :--- | :--- | :--- | :--- |
 | `lime` | `skyblue` | `gold` | `indigo` |
-| :--- | :--- | :--- | :--- |
 | `coral` | `turquoise` | `plum` | `orchid` |
-| :--- | :--- | :--- | :--- |
 | `salmon` | | | |
 
 ### Default Colors
