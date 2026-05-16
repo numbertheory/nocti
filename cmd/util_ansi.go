@@ -6,12 +6,43 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strings"
 )
 
 // StripANSI removes ANSI escape codes from a string to get its visible length.
 func StripANSI(text string) string {
 	re := regexp.MustCompile(`\033\[[0-9;]*[mK]`)
 	return re.ReplaceAllString(text, "")
+}
+
+// StripANSIWithMapping removes ANSI escape codes and returns the stripped string
+// along with a mapping from stripped indices to original indices.
+func StripANSIWithMapping(text string) (string, []int) {
+	re := regexp.MustCompile(`\033\[[0-9;]*[mK]`)
+	matches := re.FindAllStringIndex(text, -1)
+
+	var stripped strings.Builder
+	mapping := make([]int, 0, len(text))
+
+	lastEnd := 0
+	for _, m := range matches {
+		start, end := m[0], m[1]
+		// Text before the ANSI code
+		for i := lastEnd; i < start; i++ {
+			mapping = append(mapping, i)
+			stripped.WriteByte(text[i])
+		}
+		lastEnd = end
+	}
+	// Remaining text
+	for i := lastEnd; i < len(text); i++ {
+		mapping = append(mapping, i)
+		stripped.WriteByte(text[i])
+	}
+	// Map the end of the string as well
+	mapping = append(mapping, len(text))
+
+	return stripped.String(), mapping
 }
 
 // VisibleLen returns the length of the string without ANSI escape codes.
@@ -115,22 +146,22 @@ type RenderedLine struct {
 // returning the display string and adjusted link positions for interaction.
 func PrepareLineForDisplay(text string, isSelected bool, selectedLinkIdx int, globalLinkStartIdx int) RenderedLine {
 	links := DetectLinks(text)
-	stripped := StripANSI(text)
+	_, mapping := StripANSIWithMapping(text)
 
 	display := ""
 	var adjustedLinks []Link
-	lastEnd := 0
+	lastEndInOrig := 0
 
 	for i, l := range links {
-		// Add text before link
-		display += stripped[lastEnd:l.Start]
+		// Add text before link, preserving ANSI codes
+		display += text[lastEndInOrig:mapping[l.Start]]
 
 		newStart := len(display)
 		globalIdx := globalLinkStartIdx + i
 
 		linkDisplay := l.DisplayText
 
-		// Apply highlighting
+		// Apply highlighting for the link itself
 		if globalIdx == selectedLinkIdx && isSelected {
 			display += "\033[4;34;7m" + linkDisplay + "\033[24;39;27m"
 		} else {
@@ -146,9 +177,10 @@ func PrepareLineForDisplay(text string, isSelected bool, selectedLinkIdx int, gl
 			End:         newEnd,
 		})
 
-		lastEnd = l.End
+		lastEndInOrig = mapping[l.End]
 	}
-	display += stripped[lastEnd:]
+	// Add remaining text, preserving ANSI codes
+	display += text[lastEndInOrig:]
 
 	return RenderedLine{
 		Display: display,

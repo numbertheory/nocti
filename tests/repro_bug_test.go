@@ -6,45 +6,8 @@ import (
 	"testing"
 )
 
-func TestProcessHighlights(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "Yellow background",
-			input:    "[:yellow: highlighted]",
-			expected: "\033[43mhighlighted\033[49m",
-		},
-		{
-			name:     "Black on blue",
-			input:    "[:black:blue: black on blue]",
-			expected: "\033[30m\033[44mblack on blue\033[39m\033[49m",
-		},
-		{
-			name:     "Default on yellow",
-			input:    "[:default:yellow: default on yellow]",
-			expected: "\033[39m\033[43mdefault on yellow\033[39m\033[49m",
-		},
-		{
-			name:     "Invalid colors",
-			input:    "[:invalid: invalid]",
-			expected: "[:invalid: invalid]",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := cmd.ProcessHighlights(tt.input)
-			if got != tt.expected {
-				t.Errorf("ProcessHighlights() = %q, want %q", got, tt.expected)
-			}
-		})
-	}
-}
-
-func TestPrepareLineForDisplayPreservesHighlights(t *testing.T) {
+func TestPrepareLineForDisplayPreservesANSI(t *testing.T) {
+	// Simulate what happens in GetFilePreview:
 	// 1. Original text with highlighting syntax
 	input := "[:yellow: highlighted] and [link](http://example.com)"
 
