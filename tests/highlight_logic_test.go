@@ -56,7 +56,7 @@ func TestPrepareLineForDisplayPreservesHighlights(t *testing.T) {
 		t.Fatalf("Expected highlighted string to contain yellow background ANSI code, got: %q", highlighted)
 	}
 
-	// 3. Prepare for display (should preserve highlights)
+	// 3. Prepare for display (should preserve highlights and add OSC 8)
 	rendered := cmd.PrepareLineForDisplay(highlighted, false, -1, 0)
 
 	// Check if it still contains the yellow background code
@@ -64,11 +64,25 @@ func TestPrepareLineForDisplayPreservesHighlights(t *testing.T) {
 		t.Errorf("PrepareLineForDisplay stripped highlights!\nInput: %q\nOutput: %q", highlighted, rendered.Display)
 	}
 
-	// Also check if link is processed
-	if !strings.Contains(rendered.Display, "link") || strings.Contains(rendered.Display, "http://example.com") {
-		t.Errorf("Link was not correctly processed in rendered output: %q", rendered.Display)
+	// Check if OSC 8 is present
+	if !strings.Contains(rendered.Display, "\033]8;;http://example.com\033\\") {
+		t.Errorf("OSC 8 link start sequence missing or incorrect: %q", rendered.Display)
+	}
+	if !strings.Contains(rendered.Display, "\033]8;;\033\\") {
+		t.Errorf("OSC 8 link end sequence missing: %q", rendered.Display)
 	}
 
+	// Also check if link text is processed
+	if !strings.Contains(rendered.Display, "link") || strings.Contains(rendered.Display, "http://example.com") {
+		// Note: The URL is in the escape sequence, but should NOT be in the visible text
+		// This check is a bit naive if it just looks for the string anywhere,
+		// but since it's in the escape sequence, it WILL be there.
+		// We should check that it's NOT there as plain text.
+		stripped := cmd.StripANSI(rendered.Display)
+		if strings.Contains(stripped, "http://example.com") {
+			t.Errorf("URL should not be visible in stripped display: %q", stripped)
+		}
+	}
 	// Verify the URL and IsMarkdown in adjustedLinks
 	if len(rendered.Links) != 1 {
 		t.Fatalf("Expected 1 adjusted link, got %d", len(rendered.Links))

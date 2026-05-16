@@ -11,14 +11,19 @@ import (
 
 // StripANSI removes ANSI escape codes from a string to get its visible length.
 func StripANSI(text string) string {
+	// Remove standard ANSI escape codes: \033[...m and \033[...K
 	re := regexp.MustCompile(`\033\[[0-9;]*[mK]`)
-	return re.ReplaceAllString(text, "")
+	text = re.ReplaceAllString(text, "")
+	// Remove OSC 8 sequences: \033]8;;...\033\ and \033]8;;\033\
+	osc8 := regexp.MustCompile(`\033\]8;;.*?\033\\`)
+	return osc8.ReplaceAllString(text, "")
 }
 
 // StripANSIWithMapping removes ANSI escape codes and returns the stripped string
 // along with a mapping from stripped indices to original indices.
 func StripANSIWithMapping(text string) (string, []int) {
-	re := regexp.MustCompile(`\033\[[0-9;]*[mK]`)
+	// Combined regex for standard ANSI and OSC 8
+	re := regexp.MustCompile(`\033\[[0-9;]*[mK]|\033\]8;;.*?\033\\`)
 	matches := re.FindAllStringIndex(text, -1)
 
 	var stripped strings.Builder
@@ -161,11 +166,14 @@ func PrepareLineForDisplay(text string, isSelected bool, selectedLinkIdx int, gl
 
 		linkDisplay := l.DisplayText
 
-		// Apply highlighting for the link itself
+		// Apply highlighting and OSC 8 hyperlink
+		linkStart := fmt.Sprintf("\033]8;;%s\033\\", l.URL)
+		linkEnd := "\033]8;;\033\\"
+
 		if globalIdx == selectedLinkIdx && isSelected {
-			display += "\033[4;34;7m" + linkDisplay + "\033[24;39;27m"
+			display += linkStart + "\033[4;34;7m" + linkDisplay + "\033[24;39;27m" + linkEnd
 		} else {
-			display += "\033[4;34m" + linkDisplay + "\033[24;39m"
+			display += linkStart + "\033[4;34m" + linkDisplay + "\033[24;39m" + linkEnd
 		}
 
 		newEnd := len(display)
