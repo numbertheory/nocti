@@ -1,9 +1,8 @@
 ---
 title: "Calendar"
+icon: "calendar_month"
 weight: 2
 ---
-
-# Calendar Resource
 
 The Calendar resource in Nocti provides a chronological timeline for managing events and notes tied to specific dates.
 

@@ -1,5 +1,5 @@
 ---
 title: "Core Commands"
+icon: "terminal"
 weight: 2
-bookCollapseSection: false
 ---

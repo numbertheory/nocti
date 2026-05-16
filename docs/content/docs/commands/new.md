@@ -1,9 +1,8 @@
 ---
 title: "New"
+icon: "add_circle"
 weight: 3
 ---
-
-# `nocti new`
 
 The `new` command creates a new resource (notebook, todo list, or calendar) within a Nocti project.
 

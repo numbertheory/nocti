@@ -1,9 +1,8 @@
 ---
 title: "Search"
+icon: "search"
 weight: 1
 ---
-
-# Search Command
 
 The `nocti search` command allows you to perform powerful, context-aware keyword searches across your notes, calendars, and todo lists.
 

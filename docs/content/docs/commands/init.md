@@ -1,9 +1,8 @@
 ---
 title: "Init"
+icon: "settings"
 weight: 1
 ---
-
-# `nocti init`
 
 The `init` command initializes a new Nocti project in the current working directory.
 

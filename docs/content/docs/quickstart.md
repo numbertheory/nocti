@@ -1,9 +1,8 @@
 ---
 title: "Quickstart"
+icon: "speed"
 weight: 1
 ---
-
-# Quickstart Guide
 
 This guide will help you install Nocti and get started with your first project.
 

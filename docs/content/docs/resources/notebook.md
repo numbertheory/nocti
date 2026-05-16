@@ -1,9 +1,8 @@
 ---
 title: "Notebook"
+icon: "book"
 weight: 1
 ---
-
-# Notebook Customization
 
 You can customize the appearance of the `nocti list` command by defining colors in your main `.nocti/nocti.json` file.
 

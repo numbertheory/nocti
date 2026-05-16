@@ -1,9 +1,8 @@
 ---
 title: "Todo Lists"
+icon: "checklist"
 weight: 3
 ---
-
-# Todo Lists
 
 Todo lists in Nocti allow you to manage tasks and track progress directly from the file list. A Todo resource is a specialized container that organizes markdown-based task lists and other sub-resources.
 

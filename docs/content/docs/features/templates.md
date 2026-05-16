@@ -1,9 +1,8 @@
 ---
 title: "Templates"
+icon: "description"
 weight: 2
 ---
-
-# Templates
 
 Templates allow you to create new pages with pre-filled content and dynamic metadata. They are specific to each resource (notebook, todo, or calendar) and are stored within the resource itself.
 

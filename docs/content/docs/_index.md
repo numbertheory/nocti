@@ -1,8 +1,9 @@
 ---
 title: "Documentation"
-bookCollapseSection: true
+icon: "article"
+weight: 1
 ---
 
 # Documentation
 
-Welcome to the Nocti documentation. Select a command from the sidebar to learn more.
+Welcome to the Nocti documentation. Select a section from the sidebar to learn more.
