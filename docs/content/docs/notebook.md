@@ -24,9 +24,8 @@ Add an optional `colors` key at the top level of your `nocti.json` file:
 
 The following color names are supported (assuming your terminal has 256-color support):
 
-| | | | |
-| :--- | :--- | :--- | :--- |
 | `black` | `red` | `green` | `yellow` |
+| :--- | :--- | :--- | :--- |
 | `blue` | `magenta` | `cyan` | `white` |
 | `gray` | `darkgray` | `lightgray` | `silver` |
 | `brightred` | `brightgreen` | `brightyellow` | `brightblue` |
