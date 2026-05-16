@@ -56,7 +56,7 @@ func VisibleLenWithLinks(text string) int {
 	stripped := StripANSI(text)
 
 	// Detect Markdown links and subtract the length of the bracket/URL parts
-	markdownRe := regexp.MustCompile(`\[([^\]]+)\]\((https?://[^\s)\]]+)\)`)
+	markdownRe := regexp.MustCompile(`\[([^\]]+)\]\((https?://[^\s)]+?)(?:\s+"[^"]*")?\)`)
 	matches := markdownRe.FindAllStringSubmatch(stripped, -1)
 
 	totalVisible := len(stripped)
@@ -85,12 +85,12 @@ func DetectLinks(text string) []Link {
 	var links []Link
 
 	// 1. Detect Markdown links: [text](url)
-	markdownRe := regexp.MustCompile(`\[([^\]]+)\]\((https?://[^\s)\]]+)\)`)
+	markdownRe := regexp.MustCompile(`\[([^\]]+)\]\((https?://[^\s)]+?)(?:\s+"[^"]*")?\)`)
 	mdMatches := markdownRe.FindAllStringSubmatchIndex(stripped, -1)
 
 	// We'll keep track of which parts of the stripped string are "consumed" by markdown links
 	// to avoid double-detecting bare URLs inside them.
-	consumed := make([]bool, len(stripped))
+	consumed := make([]bool, len(stripped)+1)
 
 	for _, m := range mdMatches {
 		fullStart, fullEnd := m[0], m[1]
@@ -110,7 +110,7 @@ func DetectLinks(text string) []Link {
 	}
 
 	// 2. Detect Bare URLs: https?://...
-	bareRe := regexp.MustCompile(`https?://[^\s)\]]+`)
+	bareRe := regexp.MustCompile(`https?://[^\s)\]"']+`)
 	bareMatches := bareRe.FindAllStringIndex(stripped, -1)
 
 	for _, m := range bareMatches {
