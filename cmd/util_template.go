@@ -105,6 +105,34 @@ func ReplaceMacros(content string, macros map[string]string) string {
 		}
 
 		if modifier != "" {
+			if strings.HasPrefix(modifier, "+") {
+				formatStr := modifier[1:]
+				// Only apply date formatting to macros that represent dates/times
+				dateMacros := map[string]bool{
+					"DATE":      true,
+					"TIME":      true,
+					"DATETIME":  true,
+					"DAY":       true,
+					"MONTH":     true,
+					"YEAR":      true,
+					"WEEKDAY":   true,
+					"TOMORROW":  true,
+					"YESTERDAY": true,
+				}
+
+				if dateMacros[key] {
+					// We need the actual time object for relative dates
+					targetTime := now
+					switch key {
+					case "TOMORROW":
+						targetTime = now.AddDate(0, 0, 1)
+					case "YESTERDAY":
+						targetTime = now.AddDate(0, 0, -1)
+					}
+					return linuxDateToFormat(targetTime, formatStr)
+				}
+			}
+
 			switch strings.ToUpper(modifier) {
 			case "LOWER":
 				val = strings.ToLower(val)
@@ -116,6 +144,77 @@ func ReplaceMacros(content string, macros map[string]string) string {
 		}
 		return val
 	})
+}
+
+func linuxDateToFormat(t time.Time, layout string) string {
+	// Re-implementing with a robust approach:
+	// 1. Identify all % tokens
+	// 2. Map them to their Go values
+	// 3. Join everything back
+
+	var result strings.Builder
+	for i := 0; i < len(layout); i++ {
+		if layout[i] == '%' && i+1 < len(layout) {
+			token := ""
+			offset := 0
+			if layout[i+1] == '-' && i+2 < len(layout) {
+				token = layout[i : i+3]
+				offset = 2
+			} else {
+				token = layout[i : i+2]
+				offset = 1
+			}
+
+			switch token {
+			case "%Y":
+				result.WriteString(t.Format("2006"))
+			case "%y":
+				result.WriteString(t.Format("06"))
+			case "%m":
+				result.WriteString(t.Format("01"))
+			case "%-m":
+				result.WriteString(t.Format("1"))
+			case "%B":
+				result.WriteString(t.Format("January"))
+			case "%b", "%h":
+				result.WriteString(t.Format("Jan"))
+			case "%d":
+				result.WriteString(t.Format("02"))
+			case "%-d":
+				result.WriteString(t.Format("2"))
+			case "%H":
+				result.WriteString(t.Format("15"))
+			case "%I":
+				result.WriteString(t.Format("03"))
+			case "%-I":
+				result.WriteString(t.Format("3"))
+			case "%M":
+				result.WriteString(t.Format("04"))
+			case "%S":
+				result.WriteString(t.Format("05"))
+			case "%p":
+				result.WriteString(t.Format("PM"))
+			case "%P":
+				result.WriteString(strings.ToLower(t.Format("PM")))
+			case "%A":
+				result.WriteString(t.Format("Monday"))
+			case "%a":
+				result.WriteString(t.Format("Mon"))
+			case "%z":
+				result.WriteString(t.Format("-0700"))
+			case "%Z":
+				result.WriteString(t.Format("MST"))
+			case "%%":
+				result.WriteByte('%')
+			default:
+				result.WriteString(token)
+			}
+			i += offset
+		} else {
+			result.WriteByte(layout[i])
+		}
+	}
+	return result.String()
 }
 
 func slugify(s string) string {

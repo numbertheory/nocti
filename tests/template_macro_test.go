@@ -89,6 +89,21 @@ func TestReplaceMacros(t *testing.T) {
 			content:  "Spaces: {{ NAME | UPPER }}",
 			expected: "Spaces: MY MEETING NOTES",
 		},
+		{
+			name:     "Custom Date Format",
+			content:  "Year: {{DATE|+%Y}}, Month: {{DATE|+%B}}",
+			expected: "Year: " + now.Format("2006") + ", Month: " + now.Format("January"),
+		},
+		{
+			name:     "Custom Time Format (12h)",
+			content:  "Time: {{TIME|+%-I:%M%P}}",
+			expected: "Time: " + strings.ToLower(now.Format("3:04PM")),
+		},
+		{
+			name:     "Tomorrow Custom Format",
+			content:  "Tomorrow: {{TOMORROW|+%A, %B %-d}}",
+			expected: "Tomorrow: " + now.AddDate(0, 0, 1).Format("Monday, January 2"),
+		},
 	}
 
 	for _, tt := range tests {
