@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -411,62 +410,6 @@ func FindEnclosingResourceRoot(startDir string) (string, *ResourceConfig, error)
 		wd = parent
 	}
 	return "", nil, fmt.Errorf(".nocti.json not found in parents")
-}
-
-func parseTemplateFrontmatter(raw string) (map[string]string, string) {
-	metadata := make(map[string]string)
-	lines := strings.Split(raw, "\n")
-	separatorIdx := -1
-
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if len(trimmed) >= 3 && strings.Count(trimmed, "-") == len(trimmed) {
-			separatorIdx = i
-			break
-		}
-		if strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			key := strings.TrimSpace(parts[0])
-			val := strings.TrimSpace(parts[1])
-			metadata[key] = val
-		}
-	}
-
-	if separatorIdx == -1 {
-		return nil, raw
-	}
-
-	body := strings.Join(lines[separatorIdx+1:], "\n")
-	return metadata, body
-}
-
-func resolveIncrement(pattern string, targetDir string) string {
-	rePattern := strings.ReplaceAll(regexp.QuoteMeta(pattern), "\\{\\{INC\\}\\}", "(\\d+)")
-	re := regexp.MustCompile("^" + rePattern + "(\\..+)?$")
-
-	maxInc := -1
-	files, _ := os.ReadDir(targetDir)
-	for _, f := range files {
-		if f.IsDir() {
-			continue
-		}
-		matches := re.FindStringSubmatch(f.Name())
-		if len(matches) > 1 {
-			inc, err := strconv.Atoi(matches[1])
-			if err == nil {
-				if inc > maxInc {
-					maxInc = inc
-				}
-			}
-		}
-	}
-
-	nextInc := maxInc + 1
-	if nextInc < 1 {
-		nextInc = 1
-	}
-
-	return strings.ReplaceAll(pattern, "{{INC}}", strconv.Itoa(nextInc))
 }
 
 func FindEnclosingResource() (string, string, error) {
@@ -1200,7 +1143,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		// 5. Help Modal
 		if showHelp {
 			modalWidth := 50
-			modalHeight := 16 // Increased for equal top/bottom buffer
+			modalHeight := 20 // Increased for equal top/bottom buffer
 			if width < modalWidth {
 				modalWidth = width - 4
 			}
@@ -1614,7 +1557,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 									resRoot, _, _ := FindEnclosingResourceRoot(baseDir)
 									templatePath := filepath.Join(resRoot, ".templates", selectedOpt.Metadata)
 									if data, err := os.ReadFile(templatePath); err == nil {
-										metadata, content = parseTemplateFrontmatter(string(data))
+										metadata, content = ParseTemplateFrontmatter(string(data))
 									}
 								} else if effectiveResType == "todo" {
 									// Read template
@@ -1633,15 +1576,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 									}
 								}
 
-								// Always support {{NAME}} and {{DATE}}
-								nameOnly := strings.TrimSuffix(createInputName, filepath.Ext(createInputName))
-								content = strings.ReplaceAll(content, "{{NAME}}", nameOnly)
-								content = strings.ReplaceAll(content, "{{DATE}}", time.Now().Format("2006-01-02"))
-
-								// Support keys from frontmatter
+								// Replace macros in content
+								macros := make(map[string]string)
 								for k, v := range metadata {
-									content = strings.ReplaceAll(content, "{{"+k+"}}", v)
+									macros[k] = v
 								}
+								macros["NAME"] = strings.TrimSuffix(createInputName, filepath.Ext(createInputName))
+								content = ReplaceMacros(content, macros)
 
 								os.WriteFile(fullPath, []byte(content), 0644)
 							case "folder":
@@ -1799,13 +1740,13 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 							resRoot, _, _ := FindEnclosingResourceRoot(baseDir)
 							templatePath := filepath.Join(resRoot, ".templates", opt.Metadata)
 							if data, err := os.ReadFile(templatePath); err == nil {
-								metadata, _ := parseTemplateFrontmatter(string(data))
+								metadata, _ := ParseTemplateFrontmatter(string(data))
 								if fname, ok := metadata["filename"]; ok {
-									// Support {{DATE}}
-									fname = strings.ReplaceAll(fname, "{{DATE}}", time.Now().Format("2006-01-02"))
+									// Support macros in filename
+									fname = ReplaceMacros(fname, nil)
 									// Support {{INC}}
 									if strings.Contains(fname, "{{INC}}") {
-										fname = resolveIncrement(fname, targetDir)
+										fname = ResolveIncrement(fname, targetDir)
 									}
 									createInputName = fname
 								}
