@@ -4,6 +4,7 @@ import (
 	"nocti/cmd"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ func TestReplaceMacros(t *testing.T) {
 		name     string
 		content  string
 		expected string
+		validate func(t *testing.T, got string)
 	}{
 		{
 			name:     "Basic Name",
@@ -104,12 +106,35 @@ func TestReplaceMacros(t *testing.T) {
 			content:  "Tomorrow: {{TOMORROW|+%A, %B %-d}}",
 			expected: "Tomorrow: " + now.AddDate(0, 0, 1).Format("Monday, January 2"),
 		},
+		{
+			name:    "UUID Macro",
+			content: "ID: {{UUID}}",
+			// Since UUID is random, we check if it matches the expected pattern
+			validate: func(t *testing.T, got string) {
+				matched, _ := regexp.MatchString(`^ID: [0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`, got)
+				if !matched {
+					t.Errorf("UUID %q does not match expected format", got)
+				}
+			},
+		},
+		{
+			name:    "Short ID Macro",
+			content: "Short: {{SHORT_ID}}",
+			validate: func(t *testing.T, got string) {
+				matched, _ := regexp.MatchString(`^Short: [a-zA-Z0-9]{8}$`, got)
+				if !matched {
+					t.Errorf("Short ID %q does not match expected format", got)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := cmd.ReplaceMacros(tt.content, macros)
-			if got != tt.expected {
+			if tt.validate != nil {
+				tt.validate(t, got)
+			} else if got != tt.expected {
 				t.Errorf("ReplaceMacros() = %q, want %q", got, tt.expected)
 			}
 		})

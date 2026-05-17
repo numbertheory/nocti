@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/rand"
+	"fmt"
 	"os"
 	"regexp"
 	"strconv"
@@ -84,6 +86,8 @@ func ReplaceMacros(content string, macros map[string]string) string {
 	allMacros["WEEKDAY"] = now.Weekday().String()
 	allMacros["TOMORROW"] = now.AddDate(0, 0, 1).Format("2006-01-02")
 	allMacros["YESTERDAY"] = now.AddDate(0, 0, -1).Format("2006-01-02")
+	allMacros["UUID"] = generateUUID()
+	allMacros["SHORT_ID"] = generateShortID()
 
 	// Match {{KEY}} or {{KEY|MOD}}
 	re := regexp.MustCompile(`\{\{([^}|]+)(?:\|([^}]+))?\}\}`)
@@ -147,11 +151,6 @@ func ReplaceMacros(content string, macros map[string]string) string {
 }
 
 func linuxDateToFormat(t time.Time, layout string) string {
-	// Re-implementing with a robust approach:
-	// 1. Identify all % tokens
-	// 2. Map them to their Go values
-	// 3. Join everything back
-
 	var result strings.Builder
 	for i := 0; i < len(layout); i++ {
 		if layout[i] == '%' && i+1 < len(layout) {
@@ -224,4 +223,30 @@ func slugify(s string) string {
 	s = re.ReplaceAllString(s, "-")
 	// Trim -
 	return strings.Trim(s, "-")
+}
+
+func generateUUID() string {
+	b := make([]byte, 16)
+	_, err := rand.Read(b)
+	if err != nil {
+		return ""
+	}
+	// UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+	b[6] = (b[6] & 0x0f) | 0x40 // Version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // Variant 10xxxxxx
+
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
+
+func generateShortID() string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, 8)
+	_, err := rand.Read(b)
+	if err != nil {
+		return ""
+	}
+	for i := range b {
+		b[i] = charset[int(b[i])%len(charset)]
+	}
+	return string(b)
 }
