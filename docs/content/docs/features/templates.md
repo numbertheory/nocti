@@ -34,6 +34,50 @@ Templates support placeholders that are automatically replaced when a new file i
 | :--- | :--- |
 | `{{NAME}}` | The name you provide for the new file (without extension). |
 | `{{DATE}}` | The current date in `YYYY-MM-DD` format. |
+| `{{TIME}}` | The current time in `HH:MM:SS` format. |
+| `{{DATETIME}}` | Full timestamp (`YYYY-MM-DD HH:MM:SS`). |
+| `{{UUID}}` | Generates a standard version 4 UUID. |
+| `{{SHORT_ID}}` | Generates a random 8-character alphanumeric ID. |
+
+### Date & Time Macros
+
+For more granular control, you can use these individual components:
+
+| Variable | Description | Example |
+| :--- | :--- | :--- |
+| `{{DAY}}` | Day of the month (01-31) | `16` |
+| `{{MONTH}}` | Month number (01-12) | `05` |
+| `{{YEAR}}` | Full year | `2026` |
+| `{{WEEKDAY}}` | Full name of the day | `Saturday` |
+| `{{TOMORROW}}` | Tomorrow's date | `2026-05-17` |
+| `{{YESTERDAY}}` | Yesterday's date | `2026-05-15` |
+
+### String Modifiers
+
+You can transform any variable by adding a modifier after a pipe `|` character.
+
+| Modifier | Description | Example (`{{NAME}}` = "Project X") |
+| :--- | :--- | :--- |
+| `LOWER` | Converts to lowercase | `{{NAME\|LOWER}}` -> `project x` |
+| `UPPER` | Converts to uppercase | `{{NAME\|UPPER}}` -> `PROJECT X` |
+| `SLUG` | Converts to a URL-friendly slug | `{{NAME\|SLUG}}` -> `project-x` |
+
+### Custom Date Formatting
+
+Date-related macros support custom formatting using the `+` prefix and Linux-style format specifiers.
+
+**Example:** `{{TIME\|+%-I:%M%P}}` -> `6:26pm`
+
+| Specifier | Description |
+| :--- | :--- |
+| `%Y`, `%y` | Full year / short year |
+| `%m`, `%-m` | Month (01-12) / (1-12) |
+| `%B`, `%b` | Full / abbreviated month name |
+| `%d`, `%-d` | Day (01-31) / (1-31) |
+| `%H`, `%I` | 24-hour / 12-hour clock |
+| `%M`, `%S` | Minute / Second |
+| `%p`, `%P` | Upper / lowercase AM/PM |
+| `%A`, `%a` | Full / abbreviated weekday name |
 
 ### Frontmatter Variables
 
