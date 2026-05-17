@@ -31,7 +31,7 @@ func TestPerformSearch_Notebook(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "note3.md"), []byte("apple cherry cherry cherry"), 0644)
 
 	// Test case 1: Search for "apple"
-	results, err := cmd.PerformSearch(tmpDir, "notebook", false, []string{"apple"}, false)
+	results, err := cmd.PerformSearch(tmpDir, "notebook", false, []string{"apple"}, false, 0)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestPerformSearch_Notebook(t *testing.T) {
 	}
 
 	// Test case 2: Search for "apple cherry"
-	results, err = cmd.PerformSearch(tmpDir, "notebook", false, []string{"apple", "cherry"}, false)
+	results, err = cmd.PerformSearch(tmpDir, "notebook", false, []string{"apple", "cherry"}, false, 0)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestPerformSearch_Newest(t *testing.T) {
 	os.WriteFile(f2, []byte("test content"), 0644)
 
 	// Search with newestFirst = true
-	results, err := cmd.PerformSearch(tmpDir, "notebook", false, []string{"test"}, true)
+	results, err := cmd.PerformSearch(tmpDir, "notebook", false, []string{"test"}, true, 0)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestPerformSearch_Scoping(t *testing.T) {
 	os.WriteFile(filepath.Join(nb1Dir, "note_nb1.md"), []byte("target keyword"), 0644)
 
 	// 1. Search from Project Root
-	results, err := cmd.PerformSearch(tmpDir, "", true, []string{"target"}, false)
+	results, err := cmd.PerformSearch(tmpDir, "", true, []string{"target"}, false, 0)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestPerformSearch_Scoping(t *testing.T) {
 	}
 
 	// 2. Search from Notebook 1
-	results, err = cmd.PerformSearch(nb1Dir, "notebook", false, []string{"target"}, false)
+	results, err = cmd.PerformSearch(nb1Dir, "notebook", false, []string{"target"}, false, 0)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestPerformSearch_WholeWordAndSmartCase(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "content.md"), []byte("Mina was here. Determination is key. mina is small."), 0644)
 
 	// 1. Search "Mina" (Case-sensitive because of 'M')
-	results, _ := cmd.PerformSearch(tmpDir, "notebook", false, []string{"Mina"}, false)
+	results, _ := cmd.PerformSearch(tmpDir, "notebook", false, []string{"Mina"}, false, 0)
 	if len(results) != 1 {
 		t.Fatalf("Expected 1 result for 'Mina', got %d", len(results))
 	}
@@ -169,7 +169,7 @@ func TestPerformSearch_WholeWordAndSmartCase(t *testing.T) {
 	}
 
 	// 2. Search "mina" (Case-insensitive)
-	results, _ = cmd.PerformSearch(tmpDir, "notebook", false, []string{"mina"}, false)
+	results, _ = cmd.PerformSearch(tmpDir, "notebook", false, []string{"mina"}, false, 0)
 	if len(results) != 1 {
 		t.Fatalf("Expected 1 result for 'mina', got %d", len(results))
 	}
@@ -183,7 +183,7 @@ func TestPerformSearch_WholeWordAndSmartCase(t *testing.T) {
 	}
 
 	// 3. Search "nation" (Should NOT match "determination" because of whole-word)
-	results, _ = cmd.PerformSearch(tmpDir, "notebook", false, []string{"nation"}, false)
+	results, _ = cmd.PerformSearch(tmpDir, "notebook", false, []string{"nation"}, false, 0)
 	if len(results) != 0 {
 		t.Errorf("Expected 0 results for 'nation' (substring of determination), got %d", len(results))
 	}

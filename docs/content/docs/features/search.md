@@ -32,6 +32,7 @@ nocti search <query> [flags]
 
 | Flag | Shorthand | Description |
 | :--- | :--- | :--- |
+| `--limit` | `-l` | Limit the number of hits displayed and scored per document. |
 | `--newest` | `-n` | Sort results by modification time (newest first) instead of relevance score. |
 | `--json` | | Output results in raw JSON format for machine integration. |
 | `--help` | `-h` | Display help for the search command. |
@@ -84,8 +85,11 @@ For developers building tools on top of `nocti`, the `--json` flag provides a st
       "updated_at": "2026-05-16T10:30:00Z",
       "matches": [
         { "line_no": 1, "text": "Match on first line" }
-      ]
+      ],
+      "hidden_matches": 0
     }
   ]
 }
 ```
+
+The `hidden_matches` field indicates the number of additional matches found in the file that were excluded from the `matches` list due to the `--limit` flag.

@@ -17,6 +17,7 @@ import (
 
 var newestFirst bool
 var jsonOutput bool
+var hitLimit int
 
 type Match struct {
 	LineNo int    `json:"line_no"`
@@ -24,17 +25,19 @@ type Match struct {
 }
 
 type SearchResult struct {
-	Path    string      `json:"path"`
-	Score   int         `json:"score"`
-	ModTime os.FileInfo `json:"-"`
-	Matches []Match     `json:"matches"`
+	Path          string      `json:"path"`
+	Score         int         `json:"score"`
+	ModTime       os.FileInfo `json:"-"`
+	Matches       []Match     `json:"matches"`
+	HiddenMatches int         `json:"hidden_matches"`
 }
 
 type JSONSearchResult struct {
-	Path      string    `json:"path"`
-	Score     int       `json:"score"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Matches   []Match   `json:"matches"`
+	Path          string    `json:"path"`
+	Score         int       `json:"score"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	Matches       []Match   `json:"matches"`
+	HiddenMatches int       `json:"hidden_matches"`
 }
 
 type JSONSearchResponse struct {
@@ -83,7 +86,7 @@ func ScanAllFilesRecursive(searchDir string, currentResType string, isProjectRoo
 	return results, err
 }
 
-func PerformSearch(searchDir string, currentResType string, isProjectRoot bool, keywords []string, newestFirst bool) ([]SearchResult, error) {
+func PerformSearch(searchDir string, currentResType string, isProjectRoot bool, keywords []string, newestFirst bool, hitLimit int) ([]SearchResult, error) {
 	files, err := ScanAllFilesRecursive(searchDir, currentResType, isProjectRoot)
 	if err != nil {
 		return nil, err
@@ -170,6 +173,7 @@ func PerformSearch(searchDir string, currentResType string, isProjectRoot bool, 
 			// Find all matching lines
 			scanner := bufio.NewScanner(strings.NewReader(contentStr))
 			lineNo := 1
+			hiddenMatches := 0
 			for scanner.Scan() {
 				line := scanner.Text()
 				foundAny := false
@@ -180,19 +184,30 @@ func PerformSearch(searchDir string, currentResType string, isProjectRoot bool, 
 					}
 				}
 				if foundAny {
-					fileMatches = append(fileMatches, Match{
-						LineNo: lineNo,
-						Text:   strings.TrimSpace(line),
-					})
+					if hitLimit > 0 && len(fileMatches) >= hitLimit {
+						hiddenMatches++
+					} else {
+						fileMatches = append(fileMatches, Match{
+							LineNo: lineNo,
+							Text:   strings.TrimSpace(line),
+						})
+					}
 				}
 				lineNo++
 			}
 
+			// If we reached the limit, we might want to cap the score as well
+			// to prevent one file from overwhelming the ranking.
+			if hitLimit > 0 && score > hitLimit {
+				score = hitLimit
+			}
+
 			results = append(results, SearchResult{
-				Path:    absPath,
-				Score:   score,
-				ModTime: info,
-				Matches: fileMatches,
+				Path:          absPath,
+				Score:         score,
+				ModTime:       info,
+				Matches:       fileMatches,
+				HiddenMatches: hiddenMatches,
 			})
 		}
 	}
@@ -252,7 +267,7 @@ Use the --newest flag to sort by the most recently modified files first.`,
 			}
 		}
 
-		results, err := PerformSearch(searchDir, currentResType, isProjectRoot, keywords, newestFirst)
+		results, err := PerformSearch(searchDir, currentResType, isProjectRoot, keywords, newestFirst, hitLimit)
 		if err != nil {
 			return err
 		}
@@ -267,10 +282,11 @@ Use the --newest flag to sort by the most recently modified files first.`,
 			jsonResults := make([]JSONSearchResult, len(results))
 			for i, res := range results {
 				jsonResults[i] = JSONSearchResult{
-					Path:      res.Path,
-					Score:     res.Score,
-					UpdatedAt: res.ModTime.ModTime(),
-					Matches:   res.Matches,
+					Path:          res.Path,
+					Score:         res.Score,
+					UpdatedAt:     res.ModTime.ModTime(),
+					Matches:       res.Matches,
+					HiddenMatches: res.HiddenMatches,
 				}
 			}
 			response := JSONSearchResponse{
@@ -402,6 +418,9 @@ Use the --newest flag to sort by the most recently modified files first.`,
 				}
 				fmt.Printf("  %s%s%d%s: %s\n", lnBg, lnFg, m.LineNo, reset, displayText)
 			}
+			if res.HiddenMatches > 0 {
+				fmt.Printf("  %s(and %d more results)%s\n", scoreFg, res.HiddenMatches, reset)
+			}
 		}
 
 		return nil
@@ -412,4 +431,5 @@ func init() {
 	RootCmd.AddCommand(SearchCmd)
 	SearchCmd.Flags().BoolVarP(&newestFirst, "newest", "n", false, "Sort by newest matches first")
 	SearchCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output results in JSON format")
+	SearchCmd.Flags().IntVarP(&hitLimit, "limit", "l", 0, "Limit hits per document")
 }
