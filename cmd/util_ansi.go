@@ -85,6 +85,14 @@ func VisibleLenWithLinks(text string) int {
 		totalVisible -= (fullMatchLen - contentLen)
 	}
 
+	// 3. Detect special table markers [:row:color:], [:cell:color:], [:col:color:]
+	// These are removed entirely from the visible length
+	tableMarkerRe := regexp.MustCompile(`\[:(row|cell|col):([a-zA-Z0-9]+):(?:([a-zA-Z0-9]+):)?\]`)
+	tmMatches := tableMarkerRe.FindAllString(stripped, -1)
+	for _, m := range tmMatches {
+		totalVisible -= utf8.RuneCountInString(m)
+	}
+
 	return totalVisible
 }
 
@@ -224,4 +232,112 @@ func OpenURL(url string) error {
 		return fmt.Errorf("unsupported platform")
 	}
 	return cmd.Start()
+}
+
+func GetFGColorCode(colorName string, defaultCode string) string {
+	if strings.ToLower(colorName) == "default" {
+		return "\033[39m" // Reset foreground
+	}
+	colors := map[string]string{
+		"black":         "\033[30m",
+		"red":           "\033[31m",
+		"green":         "\033[32m",
+		"yellow":        "\033[33m",
+		"blue":          "\033[34m",
+		"magenta":       "\033[35m",
+		"cyan":          "\033[36m",
+		"white":         "\033[37m",
+		"gray":          "\033[38;5;244m",
+		"darkgray":      "\033[38;5;236m",
+		"lightgray":     "\033[38;5;250m",
+		"silver":        "\033[38;5;7m",
+		"brightred":     "\033[91m",
+		"brightgreen":   "\033[92m",
+		"brightyellow":  "\033[93m",
+		"brightblue":    "\033[94m",
+		"brightmagenta": "\033[95m",
+		"brightcyan":    "\033[96m",
+		"brightwhite":   "\033[97m",
+		"orange":        "\033[38;5;208m",
+		"darkorange":    "\033[38;5;166m",
+		"pink":          "\033[38;5;205m",
+		"hotpink":       "\033[38;5;198m",
+		"purple":        "\033[38;5;93m",
+		"violet":        "\033[38;5;129m",
+		"brown":         "\033[38;5;94m",
+		"navy":          "\033[38;5;18m",
+		"teal":          "\033[38;5;30m",
+		"olive":         "\033[38;5;58m",
+		"maroon":        "\033[38;5;88m",
+		"aqua":          "\033[38;5;51m",
+		"fuchsia":       "\033[38;5;201m",
+		"lime":          "\033[38;5;46m",
+		"skyblue":       "\033[38;5;117m",
+		"gold":          "\033[38;5;214m",
+		"indigo":        "\033[38;5;54m",
+		"coral":         "\033[38;5;209m",
+		"turquoise":     "\033[38;5;45m",
+		"plum":          "\033[38;5;96m",
+		"orchid":        "\033[38;5;170m",
+		"salmon":        "\033[38;5;210m",
+	}
+
+	if code, ok := colors[strings.ToLower(colorName)]; ok {
+		return code
+	}
+	return defaultCode
+}
+
+func GetColorCode(colorName string, defaultCode string) string {
+	if strings.ToLower(colorName) == "default" {
+		return "\033[49m" // Reset background
+	}
+	colors := map[string]string{
+		"black":         "\033[40m",
+		"red":           "\033[41m",
+		"green":         "\033[42m",
+		"yellow":        "\033[43m",
+		"blue":          "\033[44m",
+		"magenta":       "\033[45m",
+		"cyan":          "\033[46m",
+		"white":         "\033[47m",
+		"gray":          "\033[48;5;244m",
+		"darkgray":      "\033[48;5;236m",
+		"lightgray":     "\033[48;5;250m",
+		"silver":        "\033[48;5;7m",
+		"brightred":     "\033[101m",
+		"brightgreen":   "\033[102m",
+		"brightyellow":  "\033[103m",
+		"brightblue":    "\033[104m",
+		"brightmagenta": "\033[105m",
+		"brightcyan":    "\033[106m",
+		"brightwhite":   "\033[107m",
+		"orange":        "\033[48;5;208m",
+		"darkorange":    "\033[48;5;166m",
+		"pink":          "\033[48;5;205m",
+		"hotpink":       "\033[48;5;198m",
+		"purple":        "\033[48;5;93m",
+		"violet":        "\033[48;5;129m",
+		"brown":         "\033[48;5;94m",
+		"navy":          "\033[48;5;18m",
+		"teal":          "\033[48;5;30m",
+		"olive":         "\033[48;5;58m",
+		"maroon":        "\033[48;5;88m",
+		"aqua":          "\033[48;5;51m",
+		"fuchsia":       "\033[48;5;201m",
+		"lime":          "\033[48;5;46m",
+		"skyblue":       "\033[48;5;117m",
+		"gold":          "\033[48;5;214m",
+		"indigo":        "\033[48;5;54m",
+		"coral":         "\033[48;5;209m",
+		"turquoise":     "\033[48;5;45m",
+		"plum":          "\033[48;5;96m",
+		"orchid":        "\033[48;5;170m",
+		"salmon":        "\033[48;5;210m",
+	}
+
+	if code, ok := colors[strings.ToLower(colorName)]; ok {
+		return code
+	}
+	return defaultCode
 }
