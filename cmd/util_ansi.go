@@ -63,16 +63,26 @@ func VisibleLen(text string) int {
 func VisibleLenWithLinks(text string) int {
 	stripped := StripANSI(text)
 
-	// Detect Markdown links and subtract the length of the bracket/URL parts
+	// 1. Detect Markdown links and subtract the length of the bracket/URL parts
 	markdownRe := regexp.MustCompile(`\[([^\]]+)\]\((https?://[^\s)]+?)(?:\s+"[^"]*")?\)`)
-	matches := markdownRe.FindAllStringSubmatch(stripped, -1)
+	mdMatches := markdownRe.FindAllStringSubmatch(stripped, -1)
 
 	totalVisible := utf8.RuneCountInString(stripped)
-	for _, m := range matches {
+	for _, m := range mdMatches {
 		fullMatchLen := utf8.RuneCountInString(m[0])
 		textPartLen := utf8.RuneCountInString(m[1])
 		// We hide the brackets and the (url) part
 		totalVisible -= (fullMatchLen - textPartLen)
+	}
+
+	// 2. Detect highlight syntax [:fg:bg: text] or [:bg: text] and subtract the extra parts
+	highlightRe := regexp.MustCompile(`\[:([a-zA-Z0-9]+):(?:([a-zA-Z0-9]+):)?\s*(.*?)\]`)
+	hMatches := highlightRe.FindAllStringSubmatch(stripped, -1)
+	for _, m := range hMatches {
+		fullMatchLen := utf8.RuneCountInString(m[0])
+		contentLen := utf8.RuneCountInString(m[3])
+		// We hide the [:color:] or [:fg:bg:] part and the closing bracket
+		totalVisible -= (fullMatchLen - contentLen)
 	}
 
 	return totalVisible
