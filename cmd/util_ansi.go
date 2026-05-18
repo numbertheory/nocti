@@ -85,9 +85,9 @@ func VisibleLenWithLinks(text string) int {
 		totalVisible -= (fullMatchLen - contentLen)
 	}
 
-	// 3. Detect special table markers [:row:color:], [:cell:color:], [:col:color:]
+	// 3. Detect special table markers [:table:color:], [:row:color:], [:cell:color:], [:col:color:]
 	// These are removed entirely from the visible length
-	tableMarkerRe := regexp.MustCompile(`\[:(row|cell|col):([a-zA-Z0-9]+):(?:([a-zA-Z0-9]+):)?\]`)
+	tableMarkerRe := regexp.MustCompile(`\[:(table|row|cell|col):([a-zA-Z0-9]+):(?:([a-zA-Z0-9]+):)?\]`)
 	tmMatches := tableMarkerRe.FindAllString(stripped, -1)
 	for _, m := range tmMatches {
 		totalVisible -= utf8.RuneCountInString(m)

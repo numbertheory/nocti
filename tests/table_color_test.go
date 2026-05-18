@@ -51,3 +51,33 @@ func TestTableColoring(t *testing.T) {
 		t.Errorf("Cell Col 2 (output[4]) should be cyan, got %q", output[4])
 	}
 }
+
+func TestTableWideColoring(t *testing.T) {
+	input := []string{
+		"| [:table:yellow:] Header 1 | Header 2 |",
+		"| :--- | :--- |",
+		"| Data 1 | Data 2 |",
+	}
+
+	output := cmd.FormatTables(input)
+
+	// Print output for debugging
+	for i, line := range output {
+		t.Logf("%d: %q", i, line)
+	}
+
+	// All borders and cells should have yellow background (\033[43m)
+	for i, line := range output {
+		if !strings.Contains(line, "\033[43m") {
+			t.Errorf("Line %d should contain yellow background, got %q", i, line)
+		}
+	}
+
+	// Border chars should be colored
+	if !strings.Contains(output[0], "\033[43m┌") {
+		t.Errorf("Top border should be yellow, got %q", output[0])
+	}
+	if !strings.Contains(output[1], "\033[43m│") {
+		t.Errorf("Row border should be yellow, got %q", output[1])
+	}
+}

@@ -18,11 +18,20 @@ You can highlight specific words or phrases using the following syntax:
 
 ---
 
-## Table Coloring
+### Table Coloring
 
-You can apply colors to entire rows, columns, or individual cells in Markdown tables using special markers. 
+You can apply colors to the entire table, or to specific rows, columns, or cells using special markers.
 
-Color priority is: **Cell > Row > Column**.
+Color priority is: **Cell > Row > Column > Table**.
+
+### Table-Wide Coloring
+Color the entire table (including all borders) by placing the `[:table:color:]` marker at the beginning of the first cell of the first row.
+
+```markdown
+| [:table:blue:] Header 1 | Header 2 |
+| :--- | :--- |
+| Data 1 | Data 2 |
+```
 
 ### Column Coloring
 Define column-wide colors in the table's separator row using the `[:col:color:]` marker.

@@ -20,7 +20,9 @@ func FormatTables(lines []string) []string {
 
 	var currentTable []tableRow
 	var colColors []string
+	var tableColor string
 
+	tableColorRe := regexp.MustCompile(`^\[:table:([a-zA-Z0-9]+):(?:([a-zA-Z0-9]+):)?\]`)
 	rowColorRe := regexp.MustCompile(`^\[:row:([a-zA-Z0-9]+):(?:([a-zA-Z0-9]+):)?\]`)
 	cellColorRe := regexp.MustCompile(`^\[:cell:([a-zA-Z0-9]+):(?:([a-zA-Z0-9]+):)?\]`)
 	colColorRe := regexp.MustCompile(`\[:col:([a-zA-Z0-9]+):(?:([a-zA-Z0-9]+):)?\]`)
@@ -62,6 +64,7 @@ func FormatTables(lines []string) []string {
 		}
 
 		// 1. First pass to parse column colors from any separator row
+		// AND parse table-wide color if present in the first cell of any data row
 		for _, row := range currentTable {
 			if row.isSeparator {
 				if colColors == nil {
@@ -76,6 +79,17 @@ func FormatTables(lines []string) []string {
 						}
 					}
 				}
+			}
+		}
+
+		// Define border colors if tableColor is set
+		var borderFG, borderBG string
+		if tableColor != "" {
+			cParts := strings.Split(tableColor, ":")
+			if len(cParts) > 1 {
+				borderFG, borderBG = cParts[0], cParts[1]
+			} else {
+				borderBG = cParts[0]
 			}
 		}
 
@@ -110,7 +124,8 @@ func FormatTables(lines []string) []string {
 			}
 			topParts = append(topParts, strings.Repeat("─", w+2))
 		}
-		out = append(out, "┌"+strings.Join(topParts, "┬")+"┐")
+		topLine := "┌" + strings.Join(topParts, "┬") + "┐"
+		out = append(out, applyColors(borderFG, borderBG, topLine))
 
 		// Render Rows
 		for rIdx, row := range currentTable {
@@ -124,7 +139,8 @@ func FormatTables(lines []string) []string {
 					}
 					parts = append(parts, strings.Repeat("─", w+2))
 				}
-				out = append(out, "├"+strings.Join(parts, "┼")+"┤")
+				sepLine := "├" + strings.Join(parts, "┼") + "┤"
+				out = append(out, applyColors(borderFG, borderBG, sepLine))
 			} else {
 				// Render data row
 				var parts []string
@@ -149,7 +165,7 @@ func FormatTables(lines []string) []string {
 
 					// Apply Colors
 					var fg, bg string
-					// Priority: Cell > Row > Column
+					// Priority: Cell > Row > Column > Table
 					if i < len(row.cellColors) && row.cellColors[i] != "" {
 						cParts := strings.Split(row.cellColors[i], ":")
 						if len(cParts) > 1 {
@@ -171,11 +187,14 @@ func FormatTables(lines []string) []string {
 						} else {
 							bg = cParts[0]
 						}
+					} else if tableColor != "" {
+						fg, bg = borderFG, borderBG
 					}
 
 					parts = append(parts, applyColors(fg, bg, cellContent))
 				}
-				out = append(out, "│"+strings.Join(parts, "│")+"│")
+				rowText := applyColors(borderFG, borderBG, "│") + strings.Join(parts, applyColors(borderFG, borderBG, "│")) + applyColors(borderFG, borderBG, "│")
+				out = append(out, rowText)
 			}
 
 			// If last row, add bottom border
@@ -188,12 +207,14 @@ func FormatTables(lines []string) []string {
 					}
 					botParts = append(botParts, strings.Repeat("─", w+2))
 				}
-				out = append(out, "└"+strings.Join(botParts, "┴")+"┘")
+				botLine := "└" + strings.Join(botParts, "┴") + "┘"
+				out = append(out, applyColors(borderFG, borderBG, botLine))
 			}
 		}
 
 		currentTable = nil
 		colColors = nil
+		tableColor = ""
 	}
 
 	for _, line := range lines {
@@ -219,13 +240,22 @@ func FormatTables(lines []string) []string {
 			if isSep {
 				currentTable = append(currentTable, tableRow{isSeparator: true, cols: cols})
 			} else {
-				// Parse row/cell colors
+				// Parse table/row/cell colors
 				var rowColor string
 				cellColors := make([]string, len(cols))
 
 				for i, col := range cols {
 					cTrim := strings.TrimSpace(col)
 					if i == 0 {
+						if m := tableColorRe.FindStringSubmatch(cTrim); m != nil {
+							if m[2] != "" {
+								tableColor = m[1] + ":" + m[2]
+							} else {
+								tableColor = m[1]
+							}
+							cols[i] = strings.TrimSpace(tableColorRe.ReplaceAllString(cTrim, ""))
+							cTrim = cols[i]
+						}
 						if m := rowColorRe.FindStringSubmatch(cTrim); m != nil {
 							if m[2] != "" {
 								rowColor = m[1] + ":" + m[2]
