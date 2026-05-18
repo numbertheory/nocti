@@ -234,110 +234,122 @@ func OpenURL(url string) error {
 	return cmd.Start()
 }
 
-func GetFGColorCode(colorName string, defaultCode string) string {
-	if strings.ToLower(colorName) == "default" {
-		return "\033[39m" // Reset foreground
-	}
-	colors := map[string]string{
-		"black":         "\033[30m",
-		"red":           "\033[31m",
-		"green":         "\033[32m",
-		"yellow":        "\033[33m",
-		"blue":          "\033[34m",
-		"magenta":       "\033[35m",
-		"cyan":          "\033[36m",
-		"white":         "\033[37m",
-		"gray":          "\033[38;5;244m",
-		"darkgray":      "\033[38;5;236m",
-		"lightgray":     "\033[38;5;250m",
-		"silver":        "\033[38;5;7m",
-		"brightred":     "\033[91m",
-		"brightgreen":   "\033[92m",
-		"brightyellow":  "\033[93m",
-		"brightblue":    "\033[94m",
-		"brightmagenta": "\033[95m",
-		"brightcyan":    "\033[96m",
-		"brightwhite":   "\033[97m",
-		"orange":        "\033[38;5;208m",
-		"darkorange":    "\033[38;5;166m",
-		"pink":          "\033[38;5;205m",
-		"hotpink":       "\033[38;5;198m",
-		"purple":        "\033[38;5;93m",
-		"violet":        "\033[38;5;129m",
-		"brown":         "\033[38;5;94m",
-		"navy":          "\033[38;5;18m",
-		"teal":          "\033[38;5;30m",
-		"olive":         "\033[38;5;58m",
-		"maroon":        "\033[38;5;88m",
-		"aqua":          "\033[38;5;51m",
-		"fuchsia":       "\033[38;5;201m",
-		"lime":          "\033[38;5;46m",
-		"skyblue":       "\033[38;5;117m",
-		"gold":          "\033[38;5;214m",
-		"indigo":        "\033[38;5;54m",
-		"coral":         "\033[38;5;209m",
-		"turquoise":     "\033[38;5;45m",
-		"plum":          "\033[38;5;96m",
-		"orchid":        "\033[38;5;170m",
-		"salmon":        "\033[38;5;210m",
-	}
+var colorMap = map[string]string{
+	"black":         "0",
+	"red":           "1",
+	"green":         "2",
+	"yellow":        "3",
+	"blue":          "4",
+	"magenta":       "5",
+	"cyan":          "6",
+	"white":         "7",
+	"gray":          "38;5;244",
+	"darkgray":      "38;5;236",
+	"lightgray":     "38;5;250",
+	"silver":        "38;5;7",
+	"brightred":     "91",
+	"brightgreen":   "92",
+	"brightyellow":  "93",
+	"brightblue":    "94",
+	"brightmagenta": "95",
+	"brightcyan":    "96",
+	"brightwhite":   "97",
+	"orange":        "38;5;208",
+	"darkorange":    "38;5;166",
+	"pink":          "38;5;205",
+	"hotpink":       "38;5;198",
+	"purple":        "38;5;93",
+	"violet":        "38;5;129",
+	"brown":         "38;5;94",
+	"navy":          "38;5;18",
+	"teal":          "38;5;30",
+	"olive":         "38;5;58",
+	"maroon":        "38;5;88",
+	"aqua":          "38;5;51",
+	"fuchsia":       "38;5;201",
+	"lime":          "38;5;46",
+	"skyblue":       "38;5;117",
+	"gold":          "38;5;214",
+	"indigo":        "38;5;54",
+	"coral":         "38;5;209",
+	"turquoise":     "38;5;45",
+	"plum":          "38;5;96",
+	"orchid":        "38;5;170",
+	"salmon":        "38;5;210",
+}
 
-	if code, ok := colors[strings.ToLower(colorName)]; ok {
-		return code
+func GetColorNames() []string {
+	var names []string
+	for name := range colorMap {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func IsLightColor(name string) bool {
+	lightColors := map[string]bool{
+		"yellow":        true,
+		"cyan":          true,
+		"white":         true,
+		"lightgray":     true,
+		"silver":        true,
+		"brightgreen":   true,
+		"brightyellow":  true,
+		"brightcyan":    true,
+		"brightwhite":   true,
+		"brightmagenta": true,
+		"aqua":          true,
+		"lime":          true,
+		"skyblue":       true,
+		"gold":          true,
+		"salmon":        true,
+		"pink":          true,
+	}
+	return lightColors[strings.ToLower(name)]
+}
+
+func GetFGColorCode(colorName string, defaultCode string) string {
+	name := strings.ToLower(colorName)
+	if name == "default" {
+		return "\033[39m"
+	}
+	if code, ok := colorMap[name]; ok {
+		if strings.Contains(code, ";") {
+			return "\033[" + code + "m"
+		}
+		// Standard/Bright colors (30-37, 90-97)
+		// Our map has 0-7 or 91-97.
+		// If it's 0-7, add 30.
+		if len(code) == 1 {
+			return fmt.Sprintf("\033[3%sm", code)
+		}
+		return "\033[" + code + "m"
 	}
 	return defaultCode
 }
 
 func GetColorCode(colorName string, defaultCode string) string {
-	if strings.ToLower(colorName) == "default" {
-		return "\033[49m" // Reset background
+	name := strings.ToLower(colorName)
+	if name == "default" {
+		return "\033[49m"
 	}
-	colors := map[string]string{
-		"black":         "\033[40m",
-		"red":           "\033[41m",
-		"green":         "\033[42m",
-		"yellow":        "\033[43m",
-		"blue":          "\033[44m",
-		"magenta":       "\033[45m",
-		"cyan":          "\033[46m",
-		"white":         "\033[47m",
-		"gray":          "\033[48;5;244m",
-		"darkgray":      "\033[48;5;236m",
-		"lightgray":     "\033[48;5;250m",
-		"silver":        "\033[48;5;7m",
-		"brightred":     "\033[101m",
-		"brightgreen":   "\033[102m",
-		"brightyellow":  "\033[103m",
-		"brightblue":    "\033[104m",
-		"brightmagenta": "\033[105m",
-		"brightcyan":    "\033[106m",
-		"brightwhite":   "\033[107m",
-		"orange":        "\033[48;5;208m",
-		"darkorange":    "\033[48;5;166m",
-		"pink":          "\033[48;5;205m",
-		"hotpink":       "\033[48;5;198m",
-		"purple":        "\033[48;5;93m",
-		"violet":        "\033[48;5;129m",
-		"brown":         "\033[48;5;94m",
-		"navy":          "\033[48;5;18m",
-		"teal":          "\033[48;5;30m",
-		"olive":         "\033[48;5;58m",
-		"maroon":        "\033[48;5;88m",
-		"aqua":          "\033[48;5;51m",
-		"fuchsia":       "\033[48;5;201m",
-		"lime":          "\033[48;5;46m",
-		"skyblue":       "\033[48;5;117m",
-		"gold":          "\033[48;5;214m",
-		"indigo":        "\033[48;5;54m",
-		"coral":         "\033[48;5;209m",
-		"turquoise":     "\033[48;5;45m",
-		"plum":          "\033[48;5;96m",
-		"orchid":        "\033[48;5;170m",
-		"salmon":        "\033[48;5;210m",
-	}
-
-	if code, ok := colors[strings.ToLower(colorName)]; ok {
-		return code
+	if code, ok := colorMap[name]; ok {
+		if strings.Contains(code, ";") {
+			// Replace 38 with 48 for background
+			bgCode := strings.Replace(code, "38", "48", 1)
+			return "\033[" + bgCode + "m"
+		}
+		if len(code) == 1 {
+			return fmt.Sprintf("\033[4%sm", code)
+		}
+		// Bright background codes are 100-107
+		// Our map has 91-97 for foreground.
+		// 91 (fg red) -> 101 (bg red)
+		if len(code) == 2 && code[0] == '9' {
+			return "\033[10" + code[1:2] + "m"
+		}
+		return "\033[" + code + "m"
 	}
 	return defaultCode
 }

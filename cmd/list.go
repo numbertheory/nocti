@@ -530,6 +530,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 	selectedLinkIdx := -1
 	focusList := true // true = List, false = Preview
 	showHelp := false
+	showSettings := false
+	var settingsState *SettingsState
 
 	// Creation states
 	type createOption struct {
@@ -586,6 +588,22 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		width, height, err := term.GetSize(int(os.Stdout.Fd()))
 		if err != nil {
 			return err
+		}
+
+		if showSettings {
+			DrawSettingsPanel(width, height, settingsState)
+			b := make([]byte, 8)
+			n, _ := os.Stdin.Read(b)
+			if n > 0 {
+				handled, shouldRefresh := settingsState.HandleInput(b, n)
+				if !handled {
+					showSettings = false
+					if shouldRefresh {
+						colors, editorCmd = loadColorsAndEditor(baseDir)
+					}
+				}
+			}
+			continue
 		}
 
 		// Determine effective resource type for creation options based on selection
@@ -1084,6 +1102,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				"    Ctrl+T     : Toggle Settings/Templates",
 				"    Ctrl+L     : Toggle Line Numbers",
 				"    ENTER      : Edit / Enter Notebook",
+				"    Ctrl+S     : Settings (Save/Discard)",
 				"    Ctrl+H     : Show Help",
 			}
 
@@ -1652,6 +1671,29 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			}
 
 			// Priority 3: General Navigation
+			if b[0] == 19 { // Ctrl+S
+				showSettings = true
+				configPath := filepath.Join(baseDir, ".nocti.json")
+				if isProjectRoot {
+					if root, err := FindProjectRoot(); err == nil {
+						configPath = filepath.Join(root, ".nocti/nocti.json")
+					}
+				}
+
+				sColors, sEditor := loadColorsAndEditor(baseDir)
+				var colorsCopy ColorsConfig
+				if sColors != nil {
+					colorsCopy = *sColors
+				}
+				settingsState = &SettingsState{
+					Tab:        TabColors,
+					ConfigPath: configPath,
+					Colors:     &colorsCopy,
+					Editor:     sEditor,
+				}
+				continue
+			}
+
 			if b[0] == 20 { // Ctrl+T
 				showHidden = !showHidden
 				var files []string
