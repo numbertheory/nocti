@@ -28,6 +28,28 @@ nocti search <query> [flags]
     - If your query is **all lowercase**, the search is **case-insensitive**.
 - **Multiple Keywords:** If you provide multiple words, `nocti` finds files that contain **all** of them.
 
+## Interactive Search
+
+In addition to the CLI command, Nocti features a full-screen interactive search UI within the `nocti list` view.
+
+1.  Press **Ctrl+P** while in the file list.
+2.  Type your search query in the prompt.
+3.  Press **ENTER** to view results.
+
+### Navigating Results
+
+- **Arrows (↑ / ↓)**: Navigate through the flattened list of files and individual matches.
+- **ENTER (on a file header)**: Automatically navigates the Nocti viewer to the resource containing that file.
+- **ENTER (on a specific match)**: Opens your configured [Editor](../settings/#2-editor-tab) and jumps directly to the matched line number.
+- **Forward Slash (/)**: Quickly edit the search query to perform a new search.
+- **ESC / q**: Close the search view and return to your previous location.
+
+### Customization
+
+The interactive search UI respects all your [Color Customizations](#colors) defined in the settings.
+
+---
+
 ## Flags
 
 | Flag | Shorthand | Description |

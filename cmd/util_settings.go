@@ -80,7 +80,7 @@ func (s *SettingsState) HandleInput(b []byte, n int) (bool, bool) {
 	}
 
 	// Exit without saving
-	if (b[0] == 27 && n == 1) || b[0] == 'q' || b[0] == 'Q' {
+	if (b[0] == 27 && n == 1) || b[0] == 'q' || b[0] == 'Q' || b[0] == 3 {
 		return false, false
 	}
 

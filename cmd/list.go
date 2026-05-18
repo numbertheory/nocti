@@ -518,11 +518,32 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		return nil
 	}
 
+	// ANSI escape codes
+	const (
+		clearScreen    = "\033[2J"
+		cursorHome     = "\033[H"
+		hideCursor     = "\033[?25l"
+		showCursor     = "\033[?25h"
+		reverseOn      = "\033[7m"
+		reverseOff     = "\033[27m"
+		enterAltScreen = "\033[?1049h"
+		exitAltScreen  = "\033[?1049l"
+		boldOn         = "\033[1m"
+		boldOff        = "\033[22m"
+		reset          = "\033[0m"
+	)
+
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		return err
 	}
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
+	// Use closure to capture latest oldState
+	defer func() {
+		term.Restore(int(os.Stdin.Fd()), oldState)
+		fmt.Print(showCursor + exitAltScreen)
+	}()
+
+	fmt.Print(enterAltScreen + hideCursor)
 
 	selectedIndex := 0
 	listOffset := 0
@@ -532,6 +553,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 	showHelp := false
 	showSettings := false
 	var settingsState *SettingsState
+	showSearchUI := false
+	var searchUIState *SearchUIState
 
 	// Creation states
 	type createOption struct {
@@ -554,21 +577,6 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 	lastEditorError := ""
 	pendingCreation := func() {}
 
-	// ANSI escape codes
-	const (
-		clearScreen    = "\033[2J"
-		cursorHome     = "\033[H"
-		hideCursor     = "\033[?25l"
-		showCursor     = "\033[?25h"
-		reverseOn      = "\033[7m"
-		reverseOff     = "\033[27m"
-		enterAltScreen = "\033[?1049h"
-		exitAltScreen  = "\033[?1049l"
-		boldOn         = "\033[1m"
-		boldOff        = "\033[22m"
-		reset          = "\033[0m"
-	)
-
 	// Icons
 	const (
 		iconFolder   = " "
@@ -581,8 +589,8 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		iconDay      = " "
 	)
 
-	fmt.Print(enterAltScreen + hideCursor)
-	defer fmt.Print(showCursor + exitAltScreen)
+	// Alt screen already entered in defer block setup
+	// hideCursor already printed
 
 	for {
 		width, height, err := term.GetSize(int(os.Stdout.Fd()))
@@ -595,11 +603,88 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			b := make([]byte, 8)
 			n, _ := os.Stdin.Read(b)
 			if n > 0 {
+				if b[0] == 3 { // Ctrl+C
+					break
+				}
 				handled, shouldRefresh := settingsState.HandleInput(b, n)
 				if !handled {
 					showSettings = false
 					if shouldRefresh {
 						colors, editorCmd = loadColorsAndEditor(baseDir)
+					}
+				}
+			}
+			continue
+		}
+
+		if showSearchUI {
+			DrawSearchUI(width, height, searchUIState)
+			b := make([]byte, 8)
+			n, _ := os.Stdin.Read(b)
+			if n > 0 {
+				if b[0] == 3 { // Ctrl+C
+					break
+				}
+				handled, match, shouldOpen := searchUIState.HandleInput(b, n)
+				if !handled {
+					if shouldOpen && match != nil {
+						if match.IsHeader {
+							showSearchUI = false
+							// Open resource containing this file
+							resRoot, config, err := FindEnclosingResourceRoot(filepath.Dir(match.Path))
+							if err == nil {
+								// Push current state to stack
+								navStack = append(navStack, navState{
+									dir:             baseDir,
+									entries:         entries,
+									isProjectRoot:   isProjectRoot,
+									currentResType:  currentResType,
+									colors:          colors,
+									editorCmd:       editorCmd,
+									showLineNumbers: showLineNumbers,
+								})
+
+								baseDir = resRoot
+								currentResType = config.Type
+								isProjectRoot = false
+								colors, editorCmd = loadColorsAndEditor(baseDir)
+
+								var newFiles []string
+								if currentResType == "calendar" {
+									newFiles, _ = ScanCalendarDays(baseDir, showHidden)
+								} else if currentResType == "todo" {
+									newFiles, _ = ScanTodoItems(baseDir, showHidden)
+								} else {
+									newFiles, _ = ScanNotebookFiles(baseDir, showHidden)
+								}
+								entries = BuildDisplayEntries(newFiles, baseDir, true, currentResType == "calendar" || currentResType == "todo", currentResType)
+								selectedIndex = 0
+								listOffset = 0
+								previewOffset = 0
+								focusList = true
+							}
+						} else {
+							// Open editor at line - stay in search UI after exit
+							args := []string{fmt.Sprintf("+%d", match.LineNo), match.Path}
+							if strings.Contains(editorCmd, "code") {
+								args = []string{"--goto", fmt.Sprintf("%s:%d", match.Path, match.LineNo)}
+							}
+
+							term.Restore(int(os.Stdin.Fd()), oldState)
+							fmt.Print(showCursor + exitAltScreen)
+
+							cmd := exec.Command(editorCmd, args...)
+							cmd.Stdin = os.Stdin
+							cmd.Stdout = os.Stdout
+							cmd.Stderr = os.Stderr
+							cmd.Run()
+
+							// Re-enter raw mode and alt screen
+							oldState, _ = term.MakeRaw(int(os.Stdin.Fd()))
+							fmt.Print(enterAltScreen + hideCursor)
+						}
+					} else {
+						showSearchUI = false
 					}
 				}
 			}
@@ -1102,6 +1187,7 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 				"    Ctrl+T     : Toggle Settings/Templates",
 				"    Ctrl+L     : Toggle Line Numbers",
 				"    ENTER      : Edit / Enter Notebook",
+				"    Ctrl+P     : Search (Interactive)",
 				"    Ctrl+S     : Settings (Save/Discard)",
 				"    Ctrl+H     : Show Help",
 			}
@@ -1671,6 +1757,18 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			}
 
 			// Priority 3: General Navigation
+			if b[0] == 16 { // Ctrl+P
+				showSearchUI = true
+				searchUIState = &SearchUIState{
+					SearchDir:     baseDir,
+					ResType:       currentResType,
+					IsProjectRoot: isProjectRoot,
+					Colors:        colors,
+					IsSearching:   true,
+				}
+				continue
+			}
+
 			if b[0] == 19 { // Ctrl+S
 				showSettings = true
 				configPath := filepath.Join(baseDir, ".nocti.json")
