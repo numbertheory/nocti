@@ -598,6 +598,11 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 			return err
 		}
 
+		// Layout Constants (moved up for sub-panel access)
+		headerHeight := 1
+		statusHeight := 1
+		contentHeight := height - headerHeight - statusHeight
+
 		if showSettings {
 			DrawSettingsPanel(width, height, settingsState)
 			b := make([]byte, 8)
@@ -658,8 +663,30 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 									newFiles, _ = ScanNotebookFiles(baseDir, showHidden)
 								}
 								entries = BuildDisplayEntries(newFiles, baseDir, true, currentResType == "calendar" || currentResType == "todo", currentResType)
-								selectedIndex = 0
-								listOffset = 0
+
+								// Find the file in entries to select it
+								relPathInRes, err := filepath.Rel(baseDir, match.Path)
+								if err == nil {
+									for i, entry := range entries {
+										if entry.RelPath == relPathInRes {
+											selectedIndex = i
+											// Ensure it's visible
+											if selectedIndex < listOffset {
+												listOffset = selectedIndex
+											} else if selectedIndex >= listOffset+contentHeight {
+												listOffset = selectedIndex - contentHeight + 1
+											}
+											if listOffset < 0 {
+												listOffset = 0
+											}
+											break
+										}
+									}
+								} else {
+									selectedIndex = 0
+									listOffset = 0
+								}
+
 								previewOffset = 0
 								focusList = true
 							}
@@ -706,11 +733,6 @@ func runInteractiveList(entries []DisplayEntry, baseDir string, colors *ColorsCo
 		}
 
 		fmt.Print(reset + clearScreen + cursorHome)
-
-		// Layout Constants
-		headerHeight := 1
-		statusHeight := 1
-		contentHeight := height - headerHeight - statusHeight
 
 		listWidth := width / 3
 		if listWidth < 30 {
